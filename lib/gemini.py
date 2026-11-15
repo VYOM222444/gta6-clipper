@@ -10,6 +10,7 @@
 """
 import json
 import os
+import socket
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -65,7 +66,7 @@ class Usage:
         self.path.write_text(json.dumps(self.data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _http_post(url, body, api_key, timeout=300):
+def _http_post(url, body, api_key, timeout=420):
     req = urllib.request.Request(
         url, data=json.dumps(body).encode("utf-8"), method="POST",
         headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
@@ -86,6 +87,8 @@ def _http_post(url, body, api_key, timeout=300):
         raise GeminiError(msg) from None
     except urllib.error.URLError as e:
         raise GeminiError(f"network error: {e.reason}") from None
+    except (TimeoutError, socket.timeout):
+        raise GeminiError(f"no answer within {timeout}s (video too long or Gemini busy)") from None
 
 
 def video_parts(url, windows=None):
@@ -141,7 +144,9 @@ class Gemini:
         body = {
             "contents": [{"role": "user", "parts": list(parts) + [{"text": prompt}]}],
             "generationConfig": {"responseMimeType": "application/json",
-                                 "responseSchema": schema, "temperature": temperature},
+                                 "responseSchema": schema, "temperature": temperature,
+                                 # fewer tokens per frame: faster answers, less quota
+                                 "mediaResolution": "MEDIA_RESOLUTION_LOW"},
         }
         last = None
         while self.models:

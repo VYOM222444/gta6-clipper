@@ -144,10 +144,11 @@
   },
   "watcher": {
     "max_windows_per_call": 5,
-    "whole_video_max_seconds": 1200,
+    "whole_video_max_seconds": 900,
     "min_quality": 6,
     "clip_min_seconds": 12,
     "clip_max_seconds": 45,
-    "overlap_seconds": 20
+    "overlap_seconds": 20,
+    "max_run_minutes": 22
   }
 }
