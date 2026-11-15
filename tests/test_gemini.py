@@ -75,3 +75,27 @@ def test_unknown_model_falls_through(tmp_path):
 def test_missing_key():
     with pytest.raises(gemini.GeminiError, match="GEMINI_API_KEY"):
         gemini.Gemini(["m"], 1, "w", api_key="")
+
+
+def test_busy_retries_once_and_counts(tmp_path):
+    attempts = []
+
+    def post(url, body, key):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise gemini.Transient("503 UNAVAILABLE")
+        return ok_answer({"ok": 1})
+    waits = []
+    g = gemini.Gemini(["m"], 5, "watcher", api_key="K", usage=usage(tmp_path), http_post=post,
+                      retry_wait=7, sleep=waits.append)
+    assert g.generate_json([], "p", {})[0] == {"ok": 1}
+    assert waits == [7] and g.usage.used("watcher") == 2
+
+
+def test_busy_twice_raises(tmp_path):
+    def post(url, body, key):
+        raise gemini.Transient("503")
+    g = gemini.Gemini(["m"], 5, "watcher", api_key="K", usage=usage(tmp_path), http_post=post,
+                      retry_wait=0, sleep=lambda s: None)
+    with pytest.raises(gemini.Transient):
+        g.generate_json([], "p", {})

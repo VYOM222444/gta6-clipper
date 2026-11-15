@@ -14,12 +14,13 @@ Run:  python -m agents.watcher   (needs GEMINI_API_KEY, GOOGLE_SERVICE_ACCOUNT_J
 import math
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from agents.scout import title_ok
 from lib import sheets
 from lib.config import load_blocklist, load_rules, load_settings
-from lib.gemini import BudgetReached, Gemini, GeminiError, video_parts
+from lib.gemini import BudgetReached, Gemini, GeminiError, Transient, video_parts
 from lib.schema import TABS
 
 TAB = "Moments"
@@ -216,42 +217,60 @@ def moments_from_answer(answer, job, used, block_ids, rules, now):
 
 # --- run ----------------------------------------------------------------------------------------
 
+def _ask(gem, job, rules):
+    c = job["candidate"]
+    vid = str(c["video_id"])
+    what = f"{len(job['windows'])} windows" if job["windows"] else f"whole {int(_f(c.get('duration_s')))} s"
+    print(f"  -> asking Gemini about {vid} ({what}) | {c.get('title', '')[:50]}", flush=True)
+    url = f"https://www.youtube.com/watch?v={vid}"
+    try:
+        return gem.generate_json(video_parts(url, job["windows"]),
+                                 build_prompt(c, job["windows"], rules), SCHEMA), None
+    except GeminiError as e:
+        return None, e
+
+
 def run(gem, jobs, used, block_ids, rules, per_run_cap, now, max_minutes=None, clock=time.monotonic):
-    """Returns (moment_rows, watched_signal_ids, watched_video_ids, notes)."""
+    """Ask Gemini about jobs in parallel waves (free tier allows a few requests per minute).
+    Returns (moment_rows, watched_signal_ids, watched_video_ids, notes)."""
     out, watched_sig, watched_vid, notes = [], {}, {}, []
-    started = clock()
-    for job in jobs:
-        if gem.calls_this_run >= per_run_cap:
-            break
+    parallel = max(int(rules["watcher"].get("parallel_calls", 1)), 1)
+    started, i, sent = clock(), 0, 0
+    stop = False
+    while i < len(jobs) and not stop:
         if max_minutes and (clock() - started) / 60 >= max_minutes:
             notes.append(f"stopped after {max_minutes} min to stay inside free GitHub minutes")
             break
-        if gem.remaining() <= 0:
-            notes.append("daily Gemini budget used up")
+        size = min(parallel, per_run_cap - sent, gem.remaining(), len(jobs) - i)
+        if size <= 0:
+            if gem.remaining() <= 0:
+                notes.append("daily Gemini budget used up")
             break
-        c = job["candidate"]
-        vid = str(c["video_id"])
-        url = f"https://www.youtube.com/watch?v={vid}"
-        what = f"{len(job['windows'])} windows" if job["windows"] else f"whole {int(_f(c.get('duration_s')))} s"
-        print(f"  -> asking Gemini about {vid} ({what}) | {c.get('title', '')[:50]}", flush=True)
-        try:
-            answer, model = gem.generate_json(video_parts(url, job["windows"]),
-                                              build_prompt(c, job["windows"], rules), SCHEMA)
-        except BudgetReached as e:
-            notes.append(str(e))
-            break
-        except GeminiError as e:
-            notes.append(f"{vid}: {e}")
-            watched_vid[vid] = "watch_failed"  # don't retry it every run
-            continue
-        rows = moments_from_answer(answer, job, used, block_ids, rules, now)
-        out.extend(rows)
-        for r in job["signal_rows"]:
-            watched_sig[str(r["moment_id"])] = "watched"
-        watched_vid[vid] = "watched"
-        ready = sum(1 for r in rows if r["gate_status"] == "ready")
-        notes.append(f"{vid} [{model}] {len(job['windows']) or 'whole'} windows -> "
-                     f"{len(rows)} moments, {ready} ready | {c.get('title', '')[:50]}")
+        wave, i, sent = jobs[i:i + size], i + size, sent + size
+        with ThreadPoolExecutor(max_workers=size) as pool:
+            results = list(pool.map(lambda j: _ask(gem, j, rules), wave))
+        for job, (res, err) in zip(wave, results):
+            c = job["candidate"]
+            vid = str(c["video_id"])
+            if err is not None:
+                if isinstance(err, BudgetReached):
+                    notes.append(str(err))
+                    stop = True
+                elif isinstance(err, Transient):
+                    notes.append(f"{vid}: {err} (will retry next run)")
+                else:
+                    notes.append(f"{vid}: {err}")
+                    watched_vid[vid] = "watch_failed"  # don't retry it every run
+                continue
+            answer, model = res
+            rows = moments_from_answer(answer, job, used, block_ids, rules, now)
+            out.extend(rows)
+            for r in job["signal_rows"]:
+                watched_sig[str(r["moment_id"])] = "watched"
+            watched_vid[vid] = "watched"
+            ready = sum(1 for r in rows if r["gate_status"] == "ready")
+            notes.append(f"{vid} [{model}] {len(job['windows']) or 'whole'} windows -> "
+                         f"{len(rows)} moments, {ready} ready | {c.get('title', '')[:50]}")
     return out, watched_sig, watched_vid, notes
 
 
@@ -273,7 +292,8 @@ def main():
         return 1
 
     try:
-        gem = Gemini(wcfg["models"], wcfg["daily_budget"], "watcher")
+        gem = Gemini(wcfg["models"], wcfg["daily_budget"], "watcher",
+                     retry_wait=rules["watcher"].get("retry_wait_seconds", 20))
     except GeminiError as e:
         print(f"WATCHER FAILED: {e}")
         return 1

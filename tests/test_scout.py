@@ -159,3 +159,25 @@ def test_bool_and_float_cells():
     headers = ["video_id", "is_watchlist", "x"]
     assert sheets._to_row(headers, {"video_id": "-ab", "is_watchlist": True, "x": 1.23456}) == ["-ab", "yes", 1.235]
     assert sheets._to_row(headers, {"video_id": "a", "is_watchlist": False, "x": None}) == ["a", "", ""]
+
+
+def test_spanish_and_portuguese_titles_dropped():
+    sc = RULES["scout"]
+    assert not scout.title_ok("YA TENGO EL GTA VI !!!!!!!! Unboxing, instalación", sc)
+    assert not scout.title_ok("GTA 6 - GUÍA DEFINITIVA DEL MAPA (Ver antes del lanzamiento)", sc)
+    assert not scout.title_ok("GTA 6: você precisa ver isso agora", sc)
+    assert scout.title_ok("GTA 6 Los Santos map is HUGE", sc)
+    assert scout.title_ok("GTA 6 - EVERYTHING YOU NEED TO KNOW!", sc)
+    assert scout.title_ok("GTA 6 में पुलिस पागल है", sc)
+
+
+def test_declared_language():
+    sc = RULES["scout"]
+    v = video("a", "GTA 6 funny")
+    assert scout.language_ok(v, sc)
+    v["snippet"]["defaultAudioLanguage"] = "es-419"
+    assert not scout.language_ok(v, sc)
+    v["snippet"]["defaultAudioLanguage"] = "en-US"
+    assert scout.language_ok(v, sc)
+    v["snippet"]["defaultAudioLanguage"] = "hi"
+    assert scout.language_ok(v, sc)

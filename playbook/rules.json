@@ -140,7 +140,52 @@
       "LATIN",
       "DEVANAGARI"
     ],
-    "max_foreign_letter_share": 0.3
+    "max_foreign_letter_share": 0.3,
+    "allowed_languages": [
+      "en",
+      "hi"
+    ],
+    "foreign_chars": "ñ¿¡ãõç",
+    "foreign_words": [
+      "el",
+      "la",
+      "las",
+      "del",
+      "que",
+      "ya",
+      "tengo",
+      "para",
+      "con",
+      "una",
+      "como",
+      "muy",
+      "pero",
+      "más",
+      "sin",
+      "nuevo",
+      "nueva",
+      "guía",
+      "guia",
+      "definitiva",
+      "antes",
+      "juego",
+      "todo",
+      "todos",
+      "lanzamiento",
+      "mejor",
+      "jugando",
+      "jugar",
+      "está",
+      "não",
+      "você",
+      "pra",
+      "uma",
+      "jogo",
+      "novo",
+      "agora",
+      "isso"
+    ],
+    "foreign_words_min": 2
   },
   "watcher": {
     "max_windows_per_call": 5,
@@ -149,6 +194,8 @@
     "clip_min_seconds": 12,
     "clip_max_seconds": 45,
     "overlap_seconds": 20,
-    "max_run_minutes": 22
+    "max_run_minutes": 22,
+    "parallel_calls": 4,
+    "retry_wait_seconds": 20
   }
 }
