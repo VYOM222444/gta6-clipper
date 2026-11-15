@@ -165,6 +165,7 @@ The **Playbook** (`playbook/PLAYBOOK.md` + `playbook/rules.json`) is read by eve
 CLAUDE.md
 requirements.txt            # pinned deps
 requirements-signals.txt    # + yt-dlp[default] (Colab Signals notebook)
+requirements-render.txt     # + yt-dlp[default] + faster-whisper (Colab Render notebook) [C]
 playbook/PLAYBOOK.md        # human-readable rules
 playbook/rules.json         # machine-readable thresholds/weights/word lists
 config/settings.json        # quotas (incl. Gemini budget), schedules, search terms, sheet ID, brands
@@ -184,9 +185,10 @@ batches/<date>.json         # Decider output, pushed on branch batch/<date>     
 agents/gatekeeper.py
 agents/researcher.py
 lib/gemini.py               # Gemini generateContent + YouTube windows, daily counter, model fallback [B2]
-lib/storage.py
-templates/<brand>.json
-colab/fetch_and_render.ipynb
+lib/render.py               # caption chunks, keyword highlight, .ass builder, ffmpeg command, post .txt [C]
+agents/render_batch.py      # Fetcher + Renderer: approved Batch rows -> Drive mp4 + txt  [C]
+templates/<brand>.json      # v1 style per brand: accent colour, fonts, sizes, positions  [C]
+colab/render.ipynb          # evening Colab run: download + render approved clips        [C]
 colab/signals.ipynb         # morning Colab run: chat spikes + Most Replayed (yt-dlp works there) [B2]
 data/snapshots.csv          # append-only; committed by the Tracker workflow              [A]
 data/gemini_usage.json      # Gemini calls per Pacific day; committed by the Watcher workflow [B2]
@@ -332,3 +334,18 @@ optional), evening batch (~19:00+), Colab render (Chunk C).
   counter thread-safe. Scout/Signals/Watcher drop Spanish/Portuguese titles
   (`scout.foreign_chars`, 2+ `scout.foreign_words`; 'los' allowed for Los Santos) and
   Scout drops videos whose declared language isn't en/hi. 82 tests.
+- 2026-11-15 (Chunk C): Fetcher + Renderer built as `agents/render_batch.py` (one Colab run,
+  so the downloaded file never has to survive between sessions). Rows with approved=yes
+  and render_status != done: yt-dlp `--download-sections *start-end` (<= 1080p, node JS
+  runtime) -> faster-whisper word timestamps (model `settings.render.whisper_model`, GPU if
+  available, VAD) -> `lib/render.py` .ass + ffmpeg: 1080x1920, blurred darkened background,
+  gameplay zoomed 1.25x and centred, top title label (brand accent box), hook text over the
+  video for 2.5 s, 3-word uppercase captions under the video with one keyword in the accent
+  colour, "via @creator" credit, loudnorm -14 LUFS, x264 veryfast crf 20 -> Drive
+  `<output_dir>/<date>/<brand>/<batch_id>.mp4` + `.txt` (title, description, hashtags,
+  source link). Batch columns added: output_path, rendered_at, template_version; statuses
+  written with one batched update per clip (`sheets.set_values`). 5 brand templates v1
+  (accents: Wasted Again FF3B30, Neon Wanted FF2BD6, Mission Failed FF9500, Neon Getaway
+  00E5FF, Five Star Chaos FFD60A; fonts Anton + Poppins + Noto Sans Devanagari downloaded in
+  Colab). Verified locally by rendering a test clip and checking frames. 95 tests.
+  Not yet done: gameplay-aware reframing, split-screen facecam (Phase 3).

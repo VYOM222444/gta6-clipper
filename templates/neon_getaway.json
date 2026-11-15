@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "layout": "fit_blur",
+  "fg_zoom": 1.25,
+  "bg_blur": 24,
+  "bg_brightness": -0.18,
+  "fonts": {
+    "label": "Anton",
+    "hook": "Anton",
+    "caption": "Anton",
+    "credit": "Poppins"
+  },
+  "label": {
+    "size": 76,
+    "text": "000000",
+    "box_pad": 18,
+    "y": 430
+  },
+  "hook": {
+    "size": 108,
+    "color": "FFFFFF",
+    "outline": 7,
+    "seconds": 2.5
+  },
+  "caption": {
+    "size": 104,
+    "color": "FFFFFF",
+    "outline": 7,
+    "shadow": 2,
+    "y": 1470,
+    "max_words": 3,
+    "pause_split": 0.45,
+    "uppercase": true
+  },
+  "credit": {
+    "size": 36,
+    "color": "FFFFFF",
+    "alpha": 0.75,
+    "margin_x": 60
+  },
+  "loudness": {
+    "I": -14,
+    "TP": -1.5,
+    "LRA": 11
+  },
+  "brand": "neon_getaway",
+  "name": "Neon Getaway",
+  "accent": "00E5FF",
+  "_mood": "cyan: cars, chases, escapes"
+}

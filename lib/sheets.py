@@ -212,6 +212,20 @@ def set_column(ws, headers, key, column, values_by_key):
     return len(updates)
 
 
+def set_values(ws, headers, key, updates_by_key):
+    """Set several columns for several rows: {key: {column: value}}. One read, one write."""
+    rows = ws.get_all_values()
+    ki = headers.index(key)
+    data = []
+    for i, row in enumerate(rows[1:], start=2):
+        k = row[ki] if len(row) > ki else ""
+        for col, val in (updates_by_key.get(k) or {}).items():
+            data.append({"range": f"{_col_letter(headers.index(col) + 1)}{i}", "values": [[val]]})
+    if data:
+        ws.batch_update(data, value_input_option="RAW")
+    return len(data)
+
+
 def _to_row(headers, rec):
     row = []
     for h in headers:
