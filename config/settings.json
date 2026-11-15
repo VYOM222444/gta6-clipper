@@ -112,5 +112,17 @@
   ],
   "batch": {
     "clips_per_brand": 4
+  },
+  "render": {
+    "whisper_model": "small",
+    "output_dir": "/content/drive/MyDrive/GTA6 Clipper",
+    "work_dir": "/content/work",
+    "fonts_dir": "/content/fonts",
+    "fonts": {
+      "Anton": "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf",
+      "Poppins": "https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Bold.ttf",
+      "Noto Sans Devanagari": "https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth,wght%5D.ttf"
+    },
+    "max_clips_per_run": 10
   }
 }

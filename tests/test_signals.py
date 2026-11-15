@@ -145,3 +145,13 @@ def test_fetch_ytdlp_reads_partial_files(tmp_path, monkeypatch):
     monkeypatch.setattr(signals.subprocess, "run", lambda *a, **k: P())
     info, msgs, err = signals.fetch_ytdlp("vid", True, str(tmp_path), 10)
     assert info["duration"] == 600 and msgs == [(5.0, "lol")] and err == ""
+
+
+def test_set_values_many_columns_one_write():
+    headers = TABS["Batch"]
+    ws = FakeWorksheet("Batch", [headers])
+    sheets.upsert_rows(ws, headers, "batch_id", [{"batch_id": "b1", "approved": "yes"}, {"batch_id": "b2"}])
+    n = sheets.set_values(ws, headers, "batch_id", {"b1": {"render_status": "done", "output_path": "/x.mp4"}})
+    rows = ws.get_all_records()
+    assert n == 2 and rows[0]["render_status"] == "done" and rows[0]["output_path"] == "/x.mp4"
+    assert rows[0]["approved"] == "yes" and rows[1]["render_status"] == ""

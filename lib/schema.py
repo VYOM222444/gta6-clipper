@@ -35,6 +35,7 @@ TABS = {
         "batch_id", "moment_id", "video_id", "start_s", "end_s", "brand",
         "content_type", "hook_text", "title_label", "title", "description",
         "hashtags", "creator_credit", "approved", "fetch_status", "render_status",
+        "output_path", "rendered_at", "template_version",
     ],
     # Owner logs every post here; Analyst fills in results.
     "Posted": [
