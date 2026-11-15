@@ -1,0 +1,9 @@
+{
+  "_note": "Creators to check for new uploads. Add campaign info when a creator runs a paid clipping campaign.",
+  "_example": {
+    "channel_id": "UCxxxxxxxxxxxxxxxxxxxxxx",
+    "name": "Example Streamer",
+    "campaign": {"platform": "contentrewards", "url": "", "rate_per_1k": 0, "rules": ""}
+  },
+  "creators": []
+}
