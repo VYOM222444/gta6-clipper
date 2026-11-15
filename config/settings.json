@@ -1,0 +1,51 @@
+{
+  "sheet": {
+    "id": "1hq8aaJVeoPyUzQv01V1zJwxAMYvVIee5fx1ri33el9E",
+    "name": "GTA6 Clipper"
+  },
+  "timezone": "Asia/Kolkata",
+  "youtube": {
+    "daily_quota_units": 10000,
+    "daily_budget_units": 8000,
+    "search_cost_units": 100,
+    "list_cost_units": 1,
+    "search_terms": [
+      "GTA 6",
+      "GTA VI",
+      "GTA 6 gameplay",
+      "GTA 6 funny",
+      "GTA 6 stream"
+    ],
+    "relevance_language": "en",
+    "max_results_per_search": 50
+  },
+  "gemini": {
+    "_note": "Free tier caps are small and change often. Check real limits in AI Studio and edit here; code never assumes.",
+    "watcher": {
+      "model": "gemini-flash-latest",
+      "daily_request_cap": 20,
+      "daily_budget": 15,
+      "moments_per_call": 5
+    },
+    "bulk": {
+      "model": "gemini-flash-lite-latest",
+      "daily_request_cap": 500,
+      "daily_budget": 400
+    }
+  },
+  "schedules": {
+    "tracker_every_hours": 6,
+    "scout_every_hours": 6
+  },
+  "brands": [
+    {"key": "wasted_again", "name": "Wasted Again", "youtube": "@wastedagainclips", "instagram": "wastedagain.clips"},
+    {"key": "neon_wanted", "name": "Neon Wanted", "youtube": "@neonwanted.clips", "instagram": "neonwanted.clips"},
+    {"key": "mission_failed", "name": "Mission Failed", "youtube": "@missionfailed.clips", "instagram": "missionfailed.clips"},
+    {"key": "neon_getaway", "name": "Neon Getaway", "youtube": "@neongetaway.clips", "instagram": "neongetaway.clips"},
+    {"key": "five_star_chaos", "name": "Five Star Chaos", "youtube": "@fivestarchaos.clips", "instagram": "fivestarchaos.clips"}
+  ],
+  "content_types": ["news", "chaos", "reaction", "secret", "tip"],
+  "batch": {
+    "clips_per_brand": 4
+  }
+}
