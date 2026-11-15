@@ -320,3 +320,7 @@ optional), evening batch (~19:00+), Colab render (Chunk C).
   `agents/publish_batch.py` + workflow on `batch/**` pushes; validation per clip. 76 tests.
   Pending: owner sets up Colab secrets (GH_TOKEN), first live Watcher run (model name,
   YouTube window support), first batch.
+- 2026-11-15: First live Watcher run failed: Gemini didn't answer within 300 s on the first
+  video (socket timeout crashed the run; 1 call counted). Fix: timeout -> GeminiError
+  (video marked `watch_failed`, run continues), 420 s per call, mediaResolution LOW,
+  whole-video limit 15 min, run stops starting new calls after 22 min, unbuffered logs.

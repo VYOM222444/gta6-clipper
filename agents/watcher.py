@@ -13,6 +13,7 @@ Run:  python -m agents.watcher   (needs GEMINI_API_KEY, GOOGLE_SERVICE_ACCOUNT_J
 """
 import math
 import sys
+import time
 from datetime import datetime, timezone
 
 from agents.scout import title_ok
@@ -23,7 +24,7 @@ from lib.schema import TABS
 
 TAB = "Moments"
 CONTENT_TYPES = ["chaos", "reaction", "news", "secret", "tip"]
-SKIP_STATUS = {"blocked_leak", "blocked", "watched"}
+SKIP_STATUS = {"blocked_leak", "blocked", "watched", "watch_failed"}
 
 SCHEMA = {
     "type": "OBJECT",
@@ -215,11 +216,15 @@ def moments_from_answer(answer, job, used, block_ids, rules, now):
 
 # --- run ----------------------------------------------------------------------------------------
 
-def run(gem, jobs, used, block_ids, rules, per_run_cap, now):
+def run(gem, jobs, used, block_ids, rules, per_run_cap, now, max_minutes=None, clock=time.monotonic):
     """Returns (moment_rows, watched_signal_ids, watched_video_ids, notes)."""
     out, watched_sig, watched_vid, notes = [], {}, {}, []
+    started = clock()
     for job in jobs:
         if gem.calls_this_run >= per_run_cap:
+            break
+        if max_minutes and (clock() - started) / 60 >= max_minutes:
+            notes.append(f"stopped after {max_minutes} min to stay inside free GitHub minutes")
             break
         if gem.remaining() <= 0:
             notes.append("daily Gemini budget used up")
@@ -227,6 +232,8 @@ def run(gem, jobs, used, block_ids, rules, per_run_cap, now):
         c = job["candidate"]
         vid = str(c["video_id"])
         url = f"https://www.youtube.com/watch?v={vid}"
+        what = f"{len(job['windows'])} windows" if job["windows"] else f"whole {int(_f(c.get('duration_s')))} s"
+        print(f"  -> asking Gemini about {vid} ({what}) | {c.get('title', '')[:50]}", flush=True)
         try:
             answer, model = gem.generate_json(video_parts(url, job["windows"]),
                                               build_prompt(c, job["windows"], rules), SCHEMA)
@@ -235,6 +242,7 @@ def run(gem, jobs, used, block_ids, rules, per_run_cap, now):
             break
         except GeminiError as e:
             notes.append(f"{vid}: {e}")
+            watched_vid[vid] = "watch_failed"  # don't retry it every run
             continue
         rows = moments_from_answer(answer, job, used, block_ids, rules, now)
         out.extend(rows)
@@ -275,7 +283,8 @@ def main():
     print(f"{len(jobs)} videos waiting; Gemini calls left today: {gem.remaining()}/{gem.budget} "
           f"(this run max {per_run}).")
     rows, watched_sig, watched_vid, notes = run(
-        gem, jobs, used_spans(batch, posted, moments), block_ids, rules, per_run, now)
+        gem, jobs, used_spans(batch, posted, moments), block_ids, rules, per_run, now,
+        max_minutes=rules["watcher"].get("max_run_minutes"))
     for n in notes:
         print(f"  {n}")
 

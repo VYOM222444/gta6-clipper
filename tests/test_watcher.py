@@ -113,3 +113,30 @@ def test_run_respects_per_run_cap_and_marks_watched():
     assert gem.calls_this_run == 2
     assert wsig == {"a-100": "watched"} and set(wvid) == {"a", "b"}
     assert len(rows) == 1
+
+
+def test_run_stops_on_time_limit_and_marks_failures():
+    from lib.gemini import GeminiError
+
+    class SlowGem(FakeGem):
+        def generate_json(self, parts, prompt, schema):
+            self.calls_this_run += 1
+            raise GeminiError("no answer within 420s")
+    ticks = iter([0, 0, 600, 1500, 1500])
+    jobs = watcher.pick_jobs([cand("a"), cand("b"), cand("c")], [], RULES)
+    rows, wsig, wvid, notes = watcher.run(SlowGem([]), jobs, set(), set(), RULES, 8, NOW,
+                                          max_minutes=22, clock=lambda: next(ticks))
+    assert list(wvid.values()) == ["watch_failed", "watch_failed"]
+    assert any("stopped after 22 min" in n for n in notes)
+
+
+def test_timeout_becomes_gemini_error(monkeypatch):
+    import socket
+    from lib import gemini
+
+    def boom(*a, **k):
+        raise socket.timeout("timed out")
+    monkeypatch.setattr(gemini.urllib.request, "urlopen", boom)
+    import pytest
+    with pytest.raises(gemini.GeminiError, match="no answer"):
+        gemini._http_post("https://example.invalid/x", {}, "k", timeout=1)
