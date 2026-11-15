@@ -14,6 +14,7 @@ Run:  python -m agents.scout      (needs YOUTUBE_API_KEY, GOOGLE_SERVICE_ACCOUNT
 import math
 import re
 import sys
+import unicodedata
 from datetime import datetime, timedelta, timezone
 
 from lib import sheets
@@ -52,10 +53,34 @@ def classify(video, short_max_seconds):
     return "short" if 0 < secs <= short_max_seconds else "long"
 
 
+HASHTAG_RE = re.compile(r"#\S+")
+
+
+def clean_title(title):
+    """Title without #hashtags (people tag GTA 5 videos with #gta6 for reach)."""
+    return HASHTAG_RE.sub(" ", title or "")
+
+
+def title_is_gta6(title, pattern):
+    return re.search(pattern, clean_title(title), re.I) is not None
+
+
 def is_gta6(video, pattern):
-    sn = video.get("snippet", {})
-    text = " ".join([sn.get("title", "")] + sn.get("tags", []))
-    return re.search(pattern, text, re.I) is not None
+    return title_is_gta6(video.get("snippet", {}).get("title", ""), pattern)
+
+
+def script_ok(title, allowed=("LATIN", "DEVANAGARI"), max_foreign_share=0.3):
+    """True if the title is mostly English/Hindi letters (we can't caption other languages)."""
+    letters = [ch for ch in clean_title(title) if ch.isalpha()]
+    if not letters:
+        return True
+    foreign = sum(1 for ch in letters if not unicodedata.name(ch, "").startswith(tuple(allowed)))
+    return foreign / len(letters) <= max_foreign_share
+
+
+def title_ok(title, sc):
+    return title_is_gta6(title, sc["gta6_pattern"]) and script_ok(
+        title, tuple(sc["allowed_scripts"]), sc["max_foreign_letter_share"])
 
 
 def is_leak(video, leak_words):
@@ -93,7 +118,7 @@ def build_candidates(videos, channels, found_by, watch_ids, block_ids, rules, no
     for v in videos:
         sn, st = v.get("snippet", {}), v.get("statistics", {})
         cid = sn.get("channelId", "")
-        if cid in block_ids or not is_gta6(v, sc["gta6_pattern"]):
+        if cid in block_ids or not title_ok(sn.get("title", ""), sc):
             continue
         published = parse_time(sn["publishedAt"])
         age_h = max((now - published).total_seconds() / 3600, 0.0)

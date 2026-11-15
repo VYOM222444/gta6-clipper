@@ -1,0 +1,36 @@
+name: Signals
+
+# Once a day at UTC 13:20 = IST 18:50 (after the 18:23/18:53 IST Scout + Tracker runs),
+# plus a manual button: Actions > Signals > Run workflow.
+# Once a day keeps GitHub Actions minutes inside the free 2,000/month for private repos.
+on:
+  schedule:
+    - cron: "20 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signals
+  cancel-in-progress: false
+
+jobs:
+  signals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: denoland/setup-deno@v2   # JavaScript runtime yt-dlp needs for YouTube
+        with:
+          deno-version: v2.x
+      - run: pip install -r requirements-signals.txt
+      - name: Find moments (chat spikes, Most Replayed, comments)
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m agents.signals

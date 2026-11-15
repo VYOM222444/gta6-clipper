@@ -49,9 +49,19 @@ def test_is_gta6():
     assert scout.is_gta6(video("a", "GTA 6 cops are insane"), p)
     assert scout.is_gta6(video("a", "gta vi funny moments"), p)
     assert scout.is_gta6(video("a", "GTA6 हिंदी gameplay"), p)
-    assert scout.is_gta6(video("a", "funny moments", tags=["Grand Theft Auto VI"]), p)
+    assert not scout.is_gta6(video("a", "funny moments", tags=["Grand Theft Auto VI"]), p)
     assert not scout.is_gta6(video("a", "GTA 5 online heist"), p)
     assert not scout.is_gta6(video("a", "GTA 60fps settings"), p)
+    # real Scout result: GTA 5 stream hashtag-spamming #gta6
+    assert not scout.is_gta6(video("a", "GTA 5 LIVE 🔥#gta #shortlive #gta6 #gtav"), p)
+    assert scout.is_gta6(video("a", "Can Ai Help Me To Reach GTA 6 From GTA 5!"), p)
+
+
+def test_script_ok():
+    assert scout.script_ok("GTA 6 cops are insane 😂")
+    assert scout.script_ok("GTA 6 में पुलिस पागल है")
+    assert not scout.script_ok("Мир остановится в день выхода GTA 6?")
+    assert not scout.script_ok("GTA 6 の警察がやばい すごい")
 
 
 def test_is_leak():

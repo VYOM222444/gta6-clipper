@@ -38,8 +38,17 @@ class FakeWorksheet:
 
     def batch_update(self, data, value_input_option=None):
         for d in data:
-            row_no = int("".join(ch for ch in d["range"].split(":")[0] if ch.isdigit()))
-            self.rows[row_no - 1] = list(d["values"][0])
+            cell = d["range"].split(":")[0]
+            letters = "".join(ch for ch in cell if ch.isalpha())
+            row_no = int("".join(ch for ch in cell if ch.isdigit()))
+            col = 0
+            for ch in letters:
+                col = col * 26 + (ord(ch) - 64)
+            row = self.rows[row_no - 1]
+            vals = list(d["values"][0])
+            need = col - 1 + len(vals)
+            row.extend([""] * (need - len(row)))
+            row[col - 1:col - 1 + len(vals)] = vals
 
     def get_all_records(self, numericise_ignore=None):
         if not self.rows:

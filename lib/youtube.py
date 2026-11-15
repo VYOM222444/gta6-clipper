@@ -14,7 +14,7 @@ import urllib.request
 
 API = "https://www.googleapis.com/youtube/v3/"
 ENV_VAR = "YOUTUBE_API_KEY"
-COST = {"search": 100, "videos": 1, "channels": 1, "playlistItems": 1}
+COST = {"search": 100, "videos": 1, "channels": 1, "playlistItems": 1, "commentThreads": 1}
 
 
 class YouTubeError(Exception):
@@ -105,6 +105,24 @@ class YouTube:
         for batch in chunks(dict.fromkeys(ids)):
             data = self._call("channels", {"part": parts, "id": ",".join(batch), "maxResults": 50})
             out.extend(data.get("items", []))
+        return out
+
+    def top_comments(self, video_id, max_results=100):
+        """Top-level comments by relevance: [(text, like_count)]. 1 unit.
+        Returns [] when comments are disabled."""
+        try:
+            data = self._call("commentThreads", {
+                "part": "snippet", "videoId": video_id, "order": "relevance",
+                "maxResults": max_results, "textFormat": "plainText",
+            })
+        except YouTubeError as e:
+            if "commentsDisabled" in str(e):
+                return []
+            raise
+        out = []
+        for it in data.get("items", []):
+            sn = it["snippet"]["topLevelComment"]["snippet"]
+            out.append((sn.get("textDisplay", ""), int(sn.get("likeCount", 0) or 0)))
         return out
 
     def recent_uploads(self, channel_id, max_results=10):

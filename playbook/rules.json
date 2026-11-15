@@ -34,7 +34,31 @@
       "wtf",
       "bro"
     ],
-    "loudness_spike_db": 8.0
+    "loudness_spike_db": 8.0,
+    "videos_per_run": 6,
+    "kinds": [
+      "live_vod",
+      "long"
+    ],
+    "skip_labels": [
+      "Fading",
+      "Gone",
+      "Mature"
+    ],
+    "min_duration_s": 300,
+    "chat_min_reactions": 5,
+    "chat_tail_seconds": 10,
+    "max_windows_per_video": 8,
+    "merge_gap_seconds": 15,
+    "max_window_seconds": 90,
+    "chat_timeout_seconds": 240,
+    "replay_min_value": 0.6,
+    "replay_skip_start_share": 0.05,
+    "replay_pad_seconds": 10,
+    "comments_max": 100,
+    "comments_min_mentions": 2,
+    "comments_before_seconds": 15,
+    "comments_after_seconds": 25
   },
   "clip_length_seconds": {
     "chaos": [
@@ -111,6 +135,11 @@
       "leak",
       "leaked",
       "leaks"
-    ]
+    ],
+    "allowed_scripts": [
+      "LATIN",
+      "DEVANAGARI"
+    ],
+    "max_foreign_letter_share": 0.3
   }
 }

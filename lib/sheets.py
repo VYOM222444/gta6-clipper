@@ -177,6 +177,21 @@ def upsert_rows(ws, headers, key, records, preserve=()):
     return len(updates), len(appends)
 
 
+def set_column(ws, headers, key, column, values_by_key):
+    """Set one column for the rows whose `key` is in values_by_key. Returns count."""
+    rows = ws.get_all_values()
+    ki, ci = headers.index(key), headers.index(column)
+    col = _col_letter(ci + 1)
+    updates = []
+    for i, row in enumerate(rows[1:], start=2):
+        k = row[ki] if len(row) > ki else ""
+        if k in values_by_key:
+            updates.append({"range": f"{col}{i}", "values": [[values_by_key[k]]]})
+    if updates:
+        ws.batch_update(updates, value_input_option="RAW")
+    return len(updates)
+
+
 def _to_row(headers, rec):
     row = []
     for h in headers:

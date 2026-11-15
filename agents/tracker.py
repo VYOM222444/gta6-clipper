@@ -1,8 +1,8 @@
 """Tracker: snapshot every tracked video every 6 hours -> data/snapshots.csv + `Tracker` tab.
 
 Tracks every Candidates row except blocked ones, until the video is 7 days old (Mature)
-or has slowed down for 3 snapshots in a row. Labels: New, Rising, Breakout, Steady,
-Fading, Mature. Thresholds come from playbook/rules.json -> tracker.
+or has slowed down for 3 snapshots in a row. Labels: New, Watching, Rising, Breakout,
+Steady, Fading, Mature, Gone. Thresholds come from playbook/rules.json -> tracker.
 
 Run:  python -m agents.tracker    (needs YOUTUBE_API_KEY, GOOGLE_SERVICE_ACCOUNT_JSON)
 The GitHub workflow commits data/snapshots.csv back to the repo after each run.
@@ -116,7 +116,9 @@ def compute(snaps, published, subscribers, now, cfg):
         label, tracking = "Fading", "stopped"
     elif streak >= cfg["fading_snapshots"]:
         label = "Fading"
-    elif accel is not None and accel >= cfg["rising_velocity_ratio"]:
+    elif accel is None:
+        label = "Watching"  # only one snapshot so far: no trend yet
+    elif accel >= cfg["rising_velocity_ratio"]:
         big = subscribers and views >= cfg["breakout_views_vs_subscribers"] * subscribers
         label = "Breakout" if big else "Rising"
     else:

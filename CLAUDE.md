@@ -32,6 +32,8 @@ Principle: lean build-measure-learn. Ship the smallest working version first, th
   Tracker, Signals) and send Gemini only the top candidates, ideally only short windows
   around a signal, not whole videos. Ask for 3–5 moments per call. Count every call and stop
   cleanly before the cap. Read limits from config, never assume.
+- **GitHub Actions minutes:** private repo = 2,000 free min/month. Scout + Tracker ~250,
+  Signals (daily, <=6 videos, 240 s chat cap each) <= ~750. Keep new schedules small.
 - **YouTube downloads may be blocked on GitHub's servers.** Downloading (yt-dlp, including
   chat replays and audio) and video rendering run in Colab if GitHub is blocked.
 
@@ -162,6 +164,7 @@ The **Playbook** (`playbook/PLAYBOOK.md` + `playbook/rules.json`) is read by eve
 ```
 CLAUDE.md
 requirements.txt            # pinned deps
+requirements-signals.txt    # + yt-dlp[default] (Signals workflow only; needs deno)
 playbook/PLAYBOOK.md        # human-readable rules
 playbook/rules.json         # machine-readable thresholds/weights/word lists
 config/settings.json        # quotas (incl. Gemini budget), schedules, search terms, sheet ID, brands
@@ -174,7 +177,7 @@ lib/youtube.py              # YouTube Data API client, per-run quota budget, key
 agents/setup_sheet.py       # creates/repairs the 7 tabs (safe to re-run)                 [S1]
 agents/scout.py             # searches (EN + Hindi + finished streams) -> Candidates      [A]
 agents/tracker.py           # 6-hourly snapshots -> data/snapshots.csv + Tracker tab       [A]
-agents/signals.py
+agents/signals.py           # chat spikes + Most Replayed (yt-dlp) + comment timestamps -> Moments [B1]
 agents/watcher.py
 agents/gatekeeper.py
 agents/researcher.py
@@ -186,6 +189,7 @@ data/snapshots.csv          # append-only; committed by the Tracker workflow    
 .github/workflows/setup-sheet.yml   # manual "Setup sheet" button                         [S1]
 .github/workflows/scout.yml         # every 6h at :23 UTC + manual button                 [A]
 .github/workflows/tracker.yml       # every 6h at :53 UTC + manual; commits snapshots.csv  [A]
+.github/workflows/signals.yml       # daily 13:20 UTC (18:50 IST) + manual                [B1]
 .github/workflows/tests.yml         # runs pytest on every PR / push to main              [S1]
 tests/                              # pytest; tests/fakes.py = in-memory sheet fakes      [S1]
 ```
@@ -251,3 +255,21 @@ tests/                              # pytest; tests/fakes.py = in-memory sheet f
   Quota: ~2,900 Scout + ~50 Tracker units/day. Actions use ~8 short runs/day.
   Not yet verified against the live API: owner merges the PR and runs Scout, then Tracker.
   Known: Mature final label (winner/average/low) not computed yet (Analyst/Researcher).
+- 2026-11-15: Chunk A verified live: Scout found 291 videos, wrote top 50 (10 campaign
+  leads, 711 units); Tracker saved 50 snapshots and committed snapshots.csv.
+  Found in real data: GTA 5 streams hashtag-spamming #gta6 ranked #1, Russian titles.
+- 2026-11-15 (Chunk B1): Scout now matches GTA 6 in the title text only (hashtags
+  stripped; video tags ignored) and keeps only mostly Latin/Devanagari titles
+  (`scout.allowed_scripts`). Tracker labels a single-snapshot video `Watching`.
+  Signals built: picks top `signals.videos_per_run` live_vod/long candidates (skips
+  shorts, Fading/Gone/Mature, done statuses, bad titles); yt-dlp (--skip-download,
+  info json + live_chat, 240 s cap, partial files used) -> chat reaction spikes
+  (reaction words, last letter may repeat; 10 s bins; >= 3x median and >= 5; window
+  starts 30 s before) + Most Replayed peaks (>= 0.6, skip first 5%) ; YouTube
+  commentThreads (1 unit) -> timestamp mentions (>= 2 within 10 s). Windows merged
+  (15 s gap, max 90 s, x1.5 when 2+ signals agree), top 8 per video -> Moments
+  (moment_id = videoid-start, source=signal, gate_status=pending). Candidate status ->
+  signals_done / no_signals (only when yt-dlp got video info). Prints YTDLP_BLOCKED if
+  YouTube refuses every yt-dlp call from GitHub (then chat/replay move to Colab).
+  57 tests. Pending: first live run decides GitHub vs Colab for yt-dlp; then B2
+  (Watcher + Decider handoff).
