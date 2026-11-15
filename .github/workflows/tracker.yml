@@ -1,0 +1,48 @@
+name: Tracker
+
+# Every 6 hours, 30 min after Scout (UTC 00:53, 06:53, 12:53, 18:53),
+# plus a manual button: Actions > Tracker > Run workflow.
+# Saves data/snapshots.csv back to the repo after each run.
+on:
+  schedule:
+    - cron: "53 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tracker
+  cancel-in-progress: false
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Snapshot tracked videos
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m agents.tracker
+      - name: Save snapshots to repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/snapshots.csv
+          if git diff --cached --quiet; then
+            echo "No new snapshots."
+            exit 0
+          fi
+          git commit -m "tracker: snapshots $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push && exit 0
+            sleep 5
+          done
+          exit 1

@@ -33,6 +33,50 @@ class FakeWorksheet:
     def update_title(self, title):
         self.title = title
 
+    def append_rows(self, rows, value_input_option=None):
+        self.rows.extend([list(r) for r in rows])
+
+    def batch_update(self, data, value_input_option=None):
+        for d in data:
+            row_no = int("".join(ch for ch in d["range"].split(":")[0] if ch.isdigit()))
+            self.rows[row_no - 1] = list(d["values"][0])
+
+    def get_all_records(self, numericise_ignore=None):
+        if not self.rows:
+            return []
+        head = self.rows[0]
+        return [dict(zip(head, r + [""] * (len(head) - len(r)))) for r in self.rows[1:]]
+
+
+class FakeYouTube:
+    """Stands in for lib.youtube.YouTube. Feed it canned API items."""
+
+    def __init__(self, search=None, videos=None, channels=None, uploads=None):
+        self.search = search or {}        # q -> [video ids]
+        self._videos = {v["id"]: v for v in (videos or [])}
+        self._channels = {c["id"]: c for c in (channels or [])}
+        self.uploads = uploads or {}      # channel_id -> [video ids]
+        self.used, self.budget = 0, 10_000
+        self.calls = []
+
+    def search_video_ids(self, q, published_after, relevance_language=None,
+                         event_type=None, **kw):
+        self.used += 100
+        self.calls.append(("search", q, relevance_language, event_type))
+        return list(self.search.get((q, event_type), self.search.get(q, [])))
+
+    def videos(self, ids, parts=None):
+        self.used += 1
+        return [self._videos[i] for i in ids if i in self._videos]
+
+    def channels(self, ids, parts=None):
+        self.used += 1
+        return [self._channels[i] for i in ids if i in self._channels]
+
+    def recent_uploads(self, channel_id, max_results=10):
+        self.used += 1
+        return list(self.uploads.get(channel_id, []))
+
 
 class FakeSpreadsheet:
     def __init__(self, worksheets):
