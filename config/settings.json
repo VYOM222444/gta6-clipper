@@ -43,7 +43,8 @@
     ],
     "scout_run_budget_units": 1200,
     "tracker_run_budget_units": 200,
-    "_quota_note": "Scout: 7 searches x 100 + ~20 list calls per run, 4 runs/day = ~2,900 units. Tracker: ~1 unit per 50 videos per run."
+    "_quota_note": "Scout: 7 searches x 100 + ~20 list calls per run, 4 runs/day = ~2,900 units. Tracker: ~1 unit per 50 videos per run.",
+    "signals_run_budget_units": 50
   },
   "gemini": {
     "_note": "Free tier caps are small and change often. Check real limits in AI Studio and edit here; code never assumes.",
