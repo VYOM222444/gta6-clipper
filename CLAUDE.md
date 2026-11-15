@@ -169,20 +169,23 @@ config/watchlist.json       # creators to check (+ campaign info)
 config/blocklist.json       # creators/channels never to clip
 lib/config.py               # load_settings / load_rules / load_watchlist / load_blocklist  [S1]
 lib/schema.py               # column layout of every sheet tab                            [S1]
-lib/sheets.py               # service-account login, ensure_tab, read/append helpers      [S1]
+lib/sheets.py               # service-account login, ensure_tab, read/append/upsert (RAW)  [S1, A]
+lib/youtube.py              # YouTube Data API client, per-run quota budget, key never logged [A]
 agents/setup_sheet.py       # creates/repairs the 7 tabs (safe to re-run)                 [S1]
-agents/scout.py             # S2
-agents/tracker.py           # S3
+agents/scout.py             # searches (EN + Hindi + finished streams) -> Candidates      [A]
+agents/tracker.py           # 6-hourly snapshots -> data/snapshots.csv + Tracker tab       [A]
 agents/signals.py
 agents/watcher.py
 agents/gatekeeper.py
 agents/researcher.py
-lib/youtube.py  lib/gemini.py  lib/storage.py
+lib/gemini.py  lib/storage.py
 templates/<brand>.json
 colab/fetch_and_render.ipynb
 colab/signals.ipynb         # if chat/audio downloads are blocked on GitHub
-data/snapshots.csv
+data/snapshots.csv          # append-only; committed by the Tracker workflow              [A]
 .github/workflows/setup-sheet.yml   # manual "Setup sheet" button                         [S1]
+.github/workflows/scout.yml         # every 6h at :23 UTC + manual button                 [A]
+.github/workflows/tracker.yml       # every 6h at :53 UTC + manual; commits snapshots.csv  [A]
 .github/workflows/tests.yml         # runs pytest on every PR / push to main              [S1]
 tests/                              # pytest; tests/fakes.py = in-memory sheet fakes      [S1]
 ```
@@ -190,10 +193,12 @@ tests/                              # pytest; tests/fakes.py = in-memory sheet f
 ## 8. Build roadmap
 
 - Phase 0 (Nov 14): keys, repo, sheet, this file. DONE.
-- Phase 1 (Nov 15–18): S1 repo structure + sheet tabs + connection test (code DONE);
-  S2 Scout (with campaign lead scan); S3 Tracker on a 6-hour schedule.
+- Phase 1 (Nov 15–18): S1 repo structure + sheet tabs + connection test (DONE);
+  Chunk A = Scout (with campaign lead scan + Hindi search) + Tracker on a 6-hour schedule.
   Goal: collecting data at launch.
-- Phase 2 (Nov 19–~25): Signals (chat spikes first, loudness fallback), Watcher on Signals
+- Build is grouped in chunks: A (Scout + Tracker), B (Signals + Watcher + Decider
+  handoff, after real launch data), C (Fetcher + Renderer in Colab + first template).
+- Phase 2 (Nov 19–~25, chunks B and C): Signals (chat spikes first, loudness fallback), Watcher on Signals
   windows, Decider handoff (`Batch` tab), Fetcher + Renderer in Colab, one template.
   Post first clips.
 - Phase 3: daily batches, Gatekeeper, 5 templates, gameplay reframing, split-screen.
@@ -231,3 +236,18 @@ tests/                              # pytest; tests/fakes.py = in-memory sheet f
   (manual) and `tests.yml`. Pending: owner merges the PR and runs "Setup sheet" to confirm
   the live connection. Known: Gemini model names in `settings.json` are aliases
   (`gemini-flash-latest`, `gemini-flash-lite-latest`); verify in S4.
+- 2026-11-15: "Setup sheet" run succeeded after the sheet was shared with
+  `gta6-clipper@gta6-clipper-514714.iam.gserviceaccount.com`; all 7 tabs created.
+- 2026-11-15 (Chunk A): Scout + Tracker built. Scout: 7 searches/run from
+  `settings.youtube.searches` (5 English, "GTA 6 Hindi" with relevanceLanguage=hi,
+  finished live streams via eventType=completed) + watchlist uploads; filters non-GTA-6,
+  blocklist, < min_views, > 48h; leak titles kept as `blocked_leak`; score =
+  views/hour x (1 + log10(1 + outlier capped at 10)) x watchlist/campaign boosts; top 50
+  upserted to Candidates (found_at + status preserved). New Candidates columns: score,
+  found_by, updated_at; new Tracker column: url. Tracker: snapshots all non-blocked
+  candidates, ignores snapshots < 1h apart, labels New/Rising/Breakout/Steady/Fading/
+  Mature/Gone, stops at 7 days or 3 slowdowns. Sheet writes are RAW and reads keep strings
+  (ids starting with "-" stay text). Clearer "share the sheet" error. 42 tests passing.
+  Quota: ~2,900 Scout + ~50 Tracker units/day. Actions use ~8 short runs/day.
+  Not yet verified against the live API: owner merges the PR and runs Scout, then Tracker.
+  Known: Mature final label (winner/average/low) not computed yet (Analyst/Researcher).

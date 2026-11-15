@@ -59,6 +59,11 @@ def open_sheet(client, sheet_id):
 
     try:
         return client.open_by_key(sheet_id)
+    except PermissionError:  # gspread 6 raises this on 403 in open_by_key
+        raise SheetSetupError(
+            "Permission denied. Share the 'GTA6 Clipper' sheet with the service account "
+            "email (printed above) as Editor."
+        ) from None
     except gspread.exceptions.SpreadsheetNotFound:
         raise SheetSetupError(
             "Sheet not found or not shared. Share the sheet with the service account "
@@ -115,11 +120,72 @@ def _write_headers(ws, headers):
 
 
 def read_records(ws):
-    """All data rows as a list of dicts keyed by header."""
-    return ws.get_all_records()
+    """All data rows as a list of dicts keyed by header. Values stay strings, so ids like
+    "0123" or "1e5" are not turned into numbers."""
+    return ws.get_all_records(numericise_ignore=["all"])
 
 
 def append_rows(ws, rows):
     """Append rows (lists in schema column order)."""
     if rows:
-        ws.append_rows(rows, value_input_option="USER_ENTERED")
+        ws.append_rows(rows, value_input_option="RAW")
+
+
+def _col_letter(n):
+    s = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+def upsert_rows(ws, headers, key, records, preserve=()):
+    """Insert or update rows keyed by column `key`. `records` are dicts.
+
+    Existing rows are rewritten in place (no duplicates); for columns in `preserve`, a
+    non-empty value already in the sheet is kept (e.g. found_at, status).
+    Values are written RAW (a video id starting with "-" or "=" must never become a
+    formula). Returns (updated_count, appended_count).
+    """
+    values = ws.get_all_values()
+    key_idx = headers.index(key)
+    row_of = {}
+    for i, row in enumerate(values[1:], start=2):
+        if len(row) > key_idx and row[key_idx]:
+            row_of[row[key_idx]] = (i, row)
+
+    last = _col_letter(len(headers))
+    updates, appends = [], []
+    for rec in records:
+        k = str(rec[key])
+        if k in row_of:
+            i, old_row = row_of[k]
+            old = dict(zip(headers, old_row))
+            merged = dict(rec)
+            for col in preserve:
+                if old.get(col, "") != "":
+                    merged[col] = old[col]
+            updates.append({"range": f"A{i}:{last}{i}", "values": [_to_row(headers, merged)]})
+        else:
+            appends.append(_to_row(headers, rec))
+            row_of[k] = (None, None)  # avoid duplicate appends within one call
+
+    if updates:
+        ws.batch_update(updates, value_input_option="RAW")
+    if appends:
+        ws.append_rows(appends, value_input_option="RAW")
+    return len(updates), len(appends)
+
+
+def _to_row(headers, rec):
+    row = []
+    for h in headers:
+        v = rec.get(h, "")
+        if v is None:
+            v = ""
+        elif isinstance(v, bool):
+            v = "yes" if v else ""
+        elif isinstance(v, float):
+            v = round(v, 3)
+        row.append(v)
+    return row

@@ -11,13 +11,13 @@ TABS = {
         "video_id", "url", "title", "channel_id", "channel_title", "published_at",
         "kind", "duration_s", "views", "subscribers", "age_h", "views_per_hour",
         "outlier_score", "is_watchlist", "campaign_lead", "campaign_link",
-        "found_at", "status",
+        "found_at", "status", "score", "found_by", "updated_at",
     ],
     # Tracker summary: one row per tracked video, latest numbers.
     "Tracker": [
         "video_id", "title", "channel_title", "kind", "age_h", "views", "likes",
         "comments", "velocity", "acceleration", "engagement", "reach_score",
-        "label", "snapshots", "last_snapshot_at", "tracking",
+        "label", "snapshots", "last_snapshot_at", "tracking", "url",
     ],
     # Signals + Watcher output: candidate moments inside videos.
     "Moments": [

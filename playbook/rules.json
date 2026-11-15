@@ -4,31 +4,70 @@
   "_note": "Machine-readable twin of playbook/PLAYBOOK.md. Starter guesses; tune after ~2 weeks of data.",
   "tracker": {
     "new_hours": 6,
-    "act_window_hours": [6, 24],
+    "act_window_hours": [
+      6,
+      24
+    ],
     "rising_velocity_ratio": 1.5,
     "breakout_views_vs_subscribers": 3.0,
     "fading_snapshots": 2,
     "stop_after_fading_snapshots": 3,
-    "mature_days": 7
+    "mature_days": 7,
+    "min_snapshot_gap_hours": 1
   },
   "signals": {
     "chat_window_seconds": 10,
     "chat_lead_seconds": 30,
     "chat_spike_vs_baseline": 3.0,
-    "reaction_words": ["lmao", "lmfao", "lol", "💀", "😂", "🤣", "clip it", "clip that", "no way", "omg", "w", "wtf", "bro"],
+    "reaction_words": [
+      "lmao",
+      "lmfao",
+      "lol",
+      "💀",
+      "😂",
+      "🤣",
+      "clip it",
+      "clip that",
+      "no way",
+      "omg",
+      "w",
+      "wtf",
+      "bro"
+    ],
     "loudness_spike_db": 8.0
   },
   "clip_length_seconds": {
-    "chaos": [15, 30],
-    "reaction": [15, 30],
-    "news": [20, 40],
-    "secret": [20, 40],
-    "tip": [20, 40]
+    "chaos": [
+      15,
+      30
+    ],
+    "reaction": [
+      15,
+      30
+    ],
+    "news": [
+      20,
+      40
+    ],
+    "secret": [
+      20,
+      40
+    ],
+    "tip": [
+      20,
+      40
+    ]
   },
   "hook": {
     "max_words": 6,
     "payoff_by_second": 3,
-    "types": ["shock_first", "question", "bold_claim", "headline", "reaction_face"]
+    "types": [
+      "shock_first",
+      "question",
+      "bold_claim",
+      "headline",
+      "reaction_face"
+    ]
   },
   "title_label": {
     "min_words": 2,
@@ -36,11 +75,42 @@
   },
   "packaging": {
     "title_max_chars": 60,
-    "base_hashtags": ["#GTA6", "#GTA6Shorts", "#Shorts"],
+    "base_hashtags": [
+      "#GTA6",
+      "#GTA6Shorts",
+      "#Shorts"
+    ],
     "disclaimer": "Fan channel. Not affiliated with Rockstar Games."
   },
   "campaign_lead": {
-    "keywords": ["clippers", "clipping", "clip program", "clip campaign", "get paid to clip"],
-    "link_domains": ["whop.com", "contentrewards.com", "vyro", "discord.gg", "discord.com/invite"]
+    "keywords": [
+      "clippers",
+      "clipping",
+      "clip program",
+      "clip campaign",
+      "get paid to clip"
+    ],
+    "link_domains": [
+      "whop.com",
+      "contentrewards.com",
+      "vyro",
+      "discord.gg",
+      "discord.com/invite"
+    ]
+  },
+  "scout": {
+    "max_age_hours": 48,
+    "min_views": 100,
+    "max_new_per_run": 50,
+    "short_max_seconds": 180,
+    "outlier_cap": 10,
+    "watchlist_boost": 1.5,
+    "campaign_boost": 2.0,
+    "gta6_pattern": "\\bgta\\s*(6|vi)\\b|grand theft auto\\s*(6|vi)\\b|जीटीए\\s*6",
+    "leak_words": [
+      "leak",
+      "leaked",
+      "leaks"
+    ]
   }
 }
