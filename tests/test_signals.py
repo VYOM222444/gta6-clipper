@@ -115,6 +115,9 @@ def test_pick_videos_filters():
     ]
     trk = [{"video_id": "g", "label": "Fading"}]
     assert [c["video_id"] for c in signals.pick_videos(cands, trk, RULES)] == ["e", "a"]
+    cands[4]["status"] = "comments_done"
+    assert [c["video_id"] for c in signals.pick_videos(cands, trk, RULES, mode="api")] == ["a"]
+    assert [c["video_id"] for c in signals.pick_videos(cands, trk, RULES, mode="full")] == ["e", "a"]
 
 
 def test_blocked_detection():

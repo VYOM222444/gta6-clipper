@@ -1,0 +1,48 @@
+name: Watcher
+
+# Gemini checks the best Signals windows (and short videos with no signals).
+# Twice a day at UTC 04:00 and 13:00 = IST 09:30 and 18:30, plus a manual button.
+# Saves data/gemini_usage.json (daily call counter) back to the repo.
+on:
+  schedule:
+    - cron: "0 4,13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: watcher
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Check moments with Gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m agents.watcher
+      - name: Save Gemini call counter
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/gemini_usage.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "watcher: gemini usage $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push && exit 0
+            sleep 5
+          done
+          exit 1

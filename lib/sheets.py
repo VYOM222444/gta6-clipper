@@ -43,9 +43,29 @@ def load_service_account_info(env=None):
     return info
 
 
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+
+
+def in_colab():
+    try:
+        import google.colab  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def get_client(env=None):
+    """Service account on GitHub; in Colab (no secret set) the owner's own Google login."""
     import gspread  # imported here so tests don't need network libs loaded
 
+    env = os.environ if env is None else env
+    if not env.get(ENV_VAR, "").strip() and in_colab():
+        import google.auth
+        from google.colab import auth
+
+        auth.authenticate_user()
+        creds, _ = google.auth.default(scopes=SCOPES)
+        return gspread.authorize(creds)
     info = load_service_account_info(env)
     return gspread.service_account_from_dict(info)
 
