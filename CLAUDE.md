@@ -33,7 +33,7 @@ Principle: lean build-measure-learn. Ship the smallest working version first, th
   around a signal, not whole videos. Ask for 3–5 moments per call. Count every call and stop
   cleanly before the cap. Read limits from config, never assume.
 - **GitHub Actions minutes:** private repo = 2,000 free min/month. Scout + Tracker ~250,
-  Signals (daily, <=6 videos, 240 s chat cap each) <= ~750. Keep new schedules small.
+  Signals (comments only) ~60, Watcher (2/day, Gemini waits) ~300. Keep new schedules small.
 - **YouTube downloads may be blocked on GitHub's servers.** Downloading (yt-dlp, including
   chat replays and audio) and video rendering run in Colab if GitHub is blocked.
 
@@ -164,7 +164,7 @@ The **Playbook** (`playbook/PLAYBOOK.md` + `playbook/rules.json`) is read by eve
 ```
 CLAUDE.md
 requirements.txt            # pinned deps
-requirements-signals.txt    # + yt-dlp[default] (Signals workflow only; needs deno)
+requirements-signals.txt    # + yt-dlp[default] (Colab Signals notebook)
 playbook/PLAYBOOK.md        # human-readable rules
 playbook/rules.json         # machine-readable thresholds/weights/word lists
 config/settings.json        # quotas (incl. Gemini budget), schedules, search terms, sheet ID, brands
@@ -177,19 +177,25 @@ lib/youtube.py              # YouTube Data API client, per-run quota budget, key
 agents/setup_sheet.py       # creates/repairs the 7 tabs (safe to re-run)                 [S1]
 agents/scout.py             # searches (EN + Hindi + finished streams) -> Candidates      [A]
 agents/tracker.py           # 6-hourly snapshots -> data/snapshots.csv + Tracker tab       [A]
-agents/signals.py           # chat spikes + Most Replayed (yt-dlp) + comment timestamps -> Moments [B1]
-agents/watcher.py
+agents/signals.py           # SIGNALS_MODE=api (GitHub: comments) / full (Colab: + chat, Most Replayed) [B1,B2]
+agents/watcher.py           # Gemini on Signals windows / short videos -> Moments (ready/rejected_*) [B2]
+agents/publish_batch.py     # batches/<date>.json -> Batch tab, validated                 [B2]
+batches/<date>.json         # Decider output, pushed on branch batch/<date>               [B2]
 agents/gatekeeper.py
 agents/researcher.py
-lib/gemini.py  lib/storage.py
+lib/gemini.py               # Gemini generateContent + YouTube windows, daily counter, model fallback [B2]
+lib/storage.py
 templates/<brand>.json
 colab/fetch_and_render.ipynb
-colab/signals.ipynb         # if chat/audio downloads are blocked on GitHub
+colab/signals.ipynb         # morning Colab run: chat spikes + Most Replayed (yt-dlp works there) [B2]
 data/snapshots.csv          # append-only; committed by the Tracker workflow              [A]
+data/gemini_usage.json      # Gemini calls per Pacific day; committed by the Watcher workflow [B2]
 .github/workflows/setup-sheet.yml   # manual "Setup sheet" button                         [S1]
 .github/workflows/scout.yml         # every 6h at :23 UTC + manual button                 [A]
 .github/workflows/tracker.yml       # every 6h at :53 UTC + manual; commits snapshots.csv  [A]
-.github/workflows/signals.yml       # daily 13:20 UTC (18:50 IST) + manual                [B1]
+.github/workflows/signals.yml       # comments only, 00:40 + 12:40 UTC (06:10/18:10 IST)   [B2]
+.github/workflows/watcher.yml       # 04:00 + 13:00 UTC (09:30/18:30 IST); commits usage   [B2]
+.github/workflows/publish-batch.yml # on push to batch/** branches                        [B2]
 .github/workflows/tests.yml         # runs pytest on every PR / push to main              [S1]
 tests/                              # pytest; tests/fakes.py = in-memory sheet fakes      [S1]
 ```
@@ -225,7 +231,29 @@ tests/                              # pytest; tests/fakes.py = in-memory sheet f
 - Keep dependencies minimal and pinned in `requirements.txt`.
 - At the end of a session, update the "Status / log" section below.
 
-## 10. Status / log
+## 10. Daily schedule (IST) and the Decider procedure
+
+Automatic: Scout 05:53/11:53/17:53/23:53, Tracker 30 min later, Signals (comments) 06:10 and
+18:10, Watcher 09:30 and 18:30. Owner: morning Colab `colab/signals.ipynb` (Run all, ~7 AM,
+optional), evening batch (~19:00+), Colab render (Chunk C).
+
+**Decider procedure (Claude in chat, when the owner says "make today's batch"):**
+1. Read the sheet (Google Drive connector `read_file_content` on the sheet ID): `Moments`
+   rows with `source=watcher` and `gate_status=ready`; `Batch` and `Posted` for what's used.
+2. Pick the best moments (quality, freshness, Tracker label of the source video, variety
+   of content types/creators). Start with 1 clip per brand (5/day); scale later.
+3. Assign each to exactly ONE brand, spreading content types across brands.
+4. Write per clip: `hook_text` (<= 6 words, works muted), `title_label` (2–5 words, caps),
+   `title` (search phrase first, <= 60 chars), `description` (line 1 what happens + "GTA 6",
+   line 2 "🎥 Clip from @creator", then the disclaimer from rules.json), `hashtags`
+   (#GTA6 #GTA6Shorts #Shorts + 1–2 topic tags), `creator_credit` (@handle or channel name).
+   Follow PLAYBOOK.md.
+5. Save `batches/<YYYY-MM-DD>.json` (format in `agents/publish_batch.py`), commit on a
+   new branch `batch/<YYYY-MM-DD>` from main, push. The Publish batch workflow validates and
+   writes the Batch tab; check its log for REJECTED lines and fix them.
+6. Tell the owner to approve with "yes" in the `approved` column.
+
+## 11. Status / log
 
 - 2026-11-14: Repo created. Secrets `YOUTUBE_API_KEY` and `GEMINI_API_KEY` added. Google
   Sheet created. Instagram accounts created; YouTube: Wasted Again created, other 4 pending.
@@ -273,3 +301,22 @@ tests/                              # pytest; tests/fakes.py = in-memory sheet f
   YouTube refuses every yt-dlp call from GitHub (then chat/replay move to Colab).
   57 tests. Pending: first live run decides GitHub vs Colab for yt-dlp; then B2
   (Watcher + Decider handoff).
+- 2026-11-15: First live Signals run: YouTube blocked yt-dlp on GitHub ("Sign in to confirm
+  you're not a bot") for all 6 videos; comment timestamps still gave 5 moments (6 units).
+  Owner's Colab test fetched video info fine -> yt-dlp work (chat, replay, Fetcher) runs in
+  Colab.
+- 2026-11-15 (Chunk B2): Signals split into modes: `api` on GitHub (comments only, status
+  -> comments_done) and `full` in `colab/signals.ipynb` (yt-dlp with node JS runtime; owner's
+  Google login via google.colab auth in `lib/sheets.get_client`; repo cloned with a read-only
+  `GH_TOKEN` Colab secret). Watcher built: jobs = videos with pending signal windows (<= 5
+  windows per call via videoMetadata start/endOffset) then long videos <= 20 min whole;
+  Gemini returns segment-relative start/end (absolute answers detected), quality 1-10,
+  standalone, promo, hook idea; clips fitted to 12-45 s; gate -> ready / rejected_promo /
+  rejected_low (< 6) / rejected_context / rejected_used (within 20 s of Batch/Posted) /
+  rejected_blocklist. Signal rows -> watched, candidate -> watched. Daily Gemini counter
+  `data/gemini_usage.json` (Pacific date), budget 15/day split over 2 runs; models tried in
+  order ["gemini-3.8-flash", "gemini-flash-latest"]. New Moments columns: quality,
+  standalone, hook_idea, title, channel_title, url, watched_at. Batch handoff:
+  `agents/publish_batch.py` + workflow on `batch/**` pushes; validation per clip. 76 tests.
+  Pending: owner sets up Colab secrets (GH_TOKEN), first live Watcher run (model name,
+  YouTube window support), first batch.

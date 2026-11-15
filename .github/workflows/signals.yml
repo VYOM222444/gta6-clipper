@@ -1,11 +1,12 @@
 name: Signals
 
-# Once a day at UTC 13:20 = IST 18:50 (after the 18:23/18:53 IST Scout + Tracker runs),
+# GitHub part of Signals: timestamped comments only (YouTube blocks yt-dlp on GitHub).
+# Chat spikes + Most Replayed run in Colab: colab/signals.ipynb.
+# Twice a day at UTC 00:40 and 12:40 = IST 06:10 and 18:10, before the Watcher runs,
 # plus a manual button: Actions > Signals > Run workflow.
-# Once a day keeps GitHub Actions minutes inside the free 2,000/month for private repos.
 on:
   schedule:
-    - cron: "20 13 * * *"
+    - cron: "40 0,12 * * *"
   workflow_dispatch:
 
 permissions:
@@ -18,19 +19,17 @@ concurrency:
 jobs:
   signals:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - uses: denoland/setup-deno@v2   # JavaScript runtime yt-dlp needs for YouTube
-        with:
-          deno-version: v2.x
-      - run: pip install -r requirements-signals.txt
-      - name: Find moments (chat spikes, Most Replayed, comments)
+      - run: pip install -r requirements.txt
+      - name: Find moments from timestamped comments
         env:
+          SIGNALS_MODE: api
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python -m agents.signals

@@ -47,17 +47,24 @@
     "signals_run_budget_units": 50
   },
   "gemini": {
-    "_note": "Free tier caps are small and change often. Check real limits in AI Studio and edit here; code never assumes.",
+    "_note": "Free tier caps are small and change often (Nov 2026: Flash ~20 requests/day, Flash-Lite more; max 8 h of YouTube video/day). Check AI Studio and edit here; code never assumes. Models are tried in order; an unknown name falls through to the next.",
     "watcher": {
-      "model": "gemini-flash-latest",
       "daily_request_cap": 20,
       "daily_budget": 15,
-      "moments_per_call": 5
+      "moments_per_call": 5,
+      "models": [
+        "gemini-3.8-flash",
+        "gemini-flash-latest"
+      ],
+      "runs_per_day": 2
     },
     "bulk": {
-      "model": "gemini-flash-lite-latest",
       "daily_request_cap": 500,
-      "daily_budget": 400
+      "daily_budget": 400,
+      "models": [
+        "gemini-3.5-flash-lite",
+        "gemini-flash-lite-latest"
+      ]
     }
   },
   "schedules": {

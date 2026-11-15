@@ -7,10 +7,14 @@ For the top candidates (finished live streams and long videos, best score first)
 Nearby windows from different signals are merged. Output -> `Moments` (source=signal,
 gate_status=pending); the candidate's status becomes signals_done / no_signals.
 
-If YouTube blocks yt-dlp on GitHub's servers, comments still work and the run prints
-YTDLP_BLOCKED; chat/replay then move to a Colab notebook.
+Modes (env SIGNALS_MODE):
+  api  - GitHub Actions (YouTube blocks yt-dlp there): comments only; candidate status
+         -> comments_done so the next run moves on to other videos.
+  full - Colab notebook (colab/signals.ipynb): yt-dlp chat + Most Replayed, plus comments
+         if YOUTUBE_API_KEY is set. Status -> signals_done / no_signals.
+Set YTDLP_JS_RUNTIME (e.g. "node" in Colab) to pass --js-runtimes to yt-dlp.
 
-Run:  python -m agents.signals   (needs YOUTUBE_API_KEY, GOOGLE_SERVICE_ACCOUNT_JSON, yt-dlp)
+Run:  SIGNALS_MODE=api python -m agents.signals
 """
 import glob
 import json
@@ -30,6 +34,7 @@ from lib.youtube import QuotaExceeded, YouTube, YouTubeError
 
 TAB = "Moments"
 DONE_STATUS = {"signals_done", "no_signals", "blocked_leak", "blocked"}
+API_DONE_STATUS = DONE_STATUS | {"comments_done", "watched"}
 BLOCK_HINTS = ("sign in to confirm", "not a bot", "http error 429", "too many requests",
                "unable to download api page", "precondition check failed")
 TS_RE = re.compile(r"(?<![\d:])(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?![\d:])")
@@ -210,7 +215,7 @@ def _f(x, default=0.0):
         return default
 
 
-def pick_videos(candidates, tracker_rows, rules):
+def pick_videos(candidates, tracker_rows, rules, mode="full"):
     sig, sc = rules["signals"], rules["scout"]
     labels = {r["video_id"]: r.get("label", "") for r in tracker_rows}
     seen, out = set(), []
@@ -219,7 +224,8 @@ def pick_videos(candidates, tracker_rows, rules):
         if not vid or vid in seen:
             continue
         seen.add(vid)
-        if c.get("status") in DONE_STATUS or c.get("kind") not in sig["kinds"]:
+        done = API_DONE_STATUS if mode == "api" else DONE_STATUS
+        if c.get("status") in done or c.get("kind") not in sig["kinds"]:
             continue
         if _f(c.get("duration_s")) < sig["min_duration_s"] and c.get("kind") != "live_vod":
             continue
@@ -238,6 +244,8 @@ def fetch_ytdlp(video_id, is_live_vod, workdir, timeout_s):
     out_tmpl = os.path.join(workdir, "%(id)s.%(ext)s")
     cmd = [sys.executable, "-m", "yt_dlp", "--skip-download", "--write-info-json",
            "--no-warnings", "--no-progress", "-o", out_tmpl]
+    if os.environ.get("YTDLP_JS_RUNTIME"):
+        cmd += ["--js-runtimes", os.environ["YTDLP_JS_RUNTIME"]]
     if is_live_vod:
         cmd += ["--write-subs", "--sub-langs", "live_chat"]
     cmd.append(f"https://www.youtube.com/watch?v={video_id}")
@@ -277,6 +285,7 @@ def analyse(video, info, chat, comments, cfg):
 def main():
     settings, rules = load_settings(), load_rules()
     cfg = {**rules["signals"]}
+    mode = os.environ.get("SIGNALS_MODE", "full").lower()
     now = datetime.now(timezone.utc)
     try:
         client = sheets.get_client()
@@ -289,29 +298,39 @@ def main():
         print(f"SIGNALS FAILED (sheet): {e}")
         return 1
 
-    todo = pick_videos(candidates, tracker_rows, rules)
-    print(f"Checking {len(todo)} videos.")
-    yt = YouTube(budget_units=settings["youtube"]["signals_run_budget_units"])
+    todo = pick_videos(candidates, tracker_rows, rules, mode)
+    try:
+        yt = YouTube(budget_units=settings["youtube"]["signals_run_budget_units"])
+    except YouTubeError:
+        if mode == "api":
+            print("SIGNALS FAILED: YOUTUBE_API_KEY missing")
+            return 1
+        yt = None  # Colab without a YouTube key: chat + replay only
+    print(f"Mode {mode}: checking {len(todo)} videos"
+          + ("" if yt else " (no YouTube key: skipping comments)") + ".")
     all_moments, status, blocked = [], {}, 0
     with tempfile.TemporaryDirectory() as tmp:
         for c in todo:
             vid, live = str(c["video_id"]), c.get("kind") == "live_vod"
-            info, chat, err = fetch_ytdlp(vid, live, tmp, cfg["chat_timeout_seconds"])
-            if err and is_blocked(err):
-                blocked += 1
-            try:
-                comments = yt.top_comments(vid, cfg["comments_max"])
-            except QuotaExceeded as e:
-                print(f"note: {e}")
-                comments = []
-            except YouTubeError as e:
-                print(f"note: comments for {vid} failed: {e}")
-                comments = []
+            info, chat, err = (None, [], "")
+            if mode != "api":
+                info, chat, err = fetch_ytdlp(vid, live, tmp, cfg["chat_timeout_seconds"])
+                if err and is_blocked(err):
+                    blocked += 1
+            comments = []
+            if yt:
+                try:
+                    comments = yt.top_comments(vid, cfg["comments_max"])
+                except QuotaExceeded as e:
+                    print(f"note: {e}")
+                except YouTubeError as e:
+                    print(f"note: comments for {vid} failed: {e}")
             merged = analyse(c, info, chat, comments, cfg)
             rows = to_moments(vid, merged, now)
             all_moments.extend(rows)
-            got_ytdlp = info is not None
-            if got_ytdlp:
+            if mode == "api":
+                status[vid] = "comments_done"
+            elif info is not None:
                 status[vid] = "signals_done" if rows else "no_signals"
             heat = len((info or {}).get("heatmap") or [])
             print(f"  {vid} | {c.get('kind'):<8} | chat msgs {len(chat):>6} | heatmap {heat:>3} | "
@@ -322,10 +341,10 @@ def main():
                                   preserve=("gate_status", "created_at"))
     if status:
         sheets.set_column(cand_ws, TABS["Candidates"], "video_id", "status", status)
-    print(f"Moments: {new} new, {upd} updated. Quota used: {yt.used}/{yt.budget} units.")
-    if todo and blocked == len(todo):
-        print("YTDLP_BLOCKED: YouTube refused every yt-dlp request from GitHub. Chat and "
-              "Most Replayed signals need the Colab notebook; comments still work.")
+    print(f"Moments: {new} new, {upd} updated."
+          + (f" Quota used: {yt.used}/{yt.budget} units." if yt else ""))
+    if mode != "api" and todo and blocked == len(todo):
+        print("YTDLP_BLOCKED: YouTube refused every yt-dlp request from this machine.")
     return 0
 
 
