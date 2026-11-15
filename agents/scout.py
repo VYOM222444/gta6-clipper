@@ -78,9 +78,30 @@ def script_ok(title, allowed=("LATIN", "DEVANAGARI"), max_foreign_share=0.3):
     return foreign / len(letters) <= max_foreign_share
 
 
+WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+
+def looks_foreign(title, sc):
+    """Spanish/Portuguese titles use Latin letters too, so check telltale characters and
+    common words (2+ hits). 'Los Santos' is GTA's city, so 'los' is not on the list."""
+    t = clean_title(title).lower()
+    if any(ch in t for ch in sc.get("foreign_chars", "")):
+        return True
+    words = set(WORD_RE.findall(t))
+    return len(words & set(sc.get("foreign_words", []))) >= sc.get("foreign_words_min", 2)
+
+
+def language_ok(video, sc):
+    """Use YouTube's declared language when the creator set one."""
+    sn = video.get("snippet", {})
+    lang = (sn.get("defaultAudioLanguage") or sn.get("defaultLanguage") or "").lower()
+    return not lang or lang.split("-")[0] in sc.get("allowed_languages", ["en", "hi"])
+
+
 def title_ok(title, sc):
     return title_is_gta6(title, sc["gta6_pattern"]) and script_ok(
-        title, tuple(sc["allowed_scripts"]), sc["max_foreign_letter_share"])
+        title, tuple(sc["allowed_scripts"]), sc["max_foreign_letter_share"]) \
+        and not looks_foreign(title, sc)
 
 
 def is_leak(video, leak_words):
@@ -118,7 +139,7 @@ def build_candidates(videos, channels, found_by, watch_ids, block_ids, rules, no
     for v in videos:
         sn, st = v.get("snippet", {}), v.get("statistics", {})
         cid = sn.get("channelId", "")
-        if cid in block_ids or not title_ok(sn.get("title", ""), sc):
+        if cid in block_ids or not title_ok(sn.get("title", ""), sc) or not language_ok(v, sc):
             continue
         published = parse_time(sn["publishedAt"])
         age_h = max((now - published).total_seconds() / 3600, 0.0)

@@ -115,18 +115,30 @@ def test_run_respects_per_run_cap_and_marks_watched():
     assert len(rows) == 1
 
 
-def test_run_stops_on_time_limit_and_marks_failures():
-    from lib.gemini import GeminiError
+def test_run_parallel_waves_failures_and_time_limit():
+    import copy
+    from lib.gemini import GeminiError, Transient
 
-    class SlowGem(FakeGem):
+    class MixedGem(FakeGem):
         def generate_json(self, parts, prompt, schema):
             self.calls_this_run += 1
-            raise GeminiError("no answer within 420s")
-    ticks = iter([0, 0, 600, 1500, 1500])
-    jobs = watcher.pick_jobs([cand("a"), cand("b"), cand("c")], [], RULES)
-    rows, wsig, wvid, notes = watcher.run(SlowGem([]), jobs, set(), set(), RULES, 8, NOW,
+            self.used += 1
+            vid = parts[0]["fileData"]["fileUri"].split("=")[-1]
+            if vid == "a":
+                raise Transient("503 busy")
+            if vid == "b":
+                raise GeminiError("bad request")
+            return {"moments": [gm()]}, "m"
+    rules = copy.deepcopy(RULES)
+    rules["watcher"]["parallel_calls"] = 2
+    jobs = watcher.pick_jobs([cand("a", score="9"), cand("b", score="8"), cand("c", score="7"),
+                              cand("d", score="6")], [], rules)
+    ticks = iter([0, 0, 30 * 60])
+    rows, wsig, wvid, notes = watcher.run(MixedGem([]), jobs, set(), set(), rules, 8, NOW,
                                           max_minutes=22, clock=lambda: next(ticks))
-    assert list(wvid.values()) == ["watch_failed", "watch_failed"]
+    assert "a" not in wvid                      # busy: retried next run
+    assert wvid["b"] == "watch_failed"
+    assert "c" not in wvid and "d" not in wvid  # second wave never started (time limit)
     assert any("stopped after 22 min" in n for n in notes)
 
 
@@ -138,5 +150,5 @@ def test_timeout_becomes_gemini_error(monkeypatch):
         raise socket.timeout("timed out")
     monkeypatch.setattr(gemini.urllib.request, "urlopen", boom)
     import pytest
-    with pytest.raises(gemini.GeminiError, match="no answer"):
+    with pytest.raises(gemini.Transient, match="no answer"):
         gemini._http_post("https://example.invalid/x", {}, "k", timeout=1)

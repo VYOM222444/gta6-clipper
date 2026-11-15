@@ -33,7 +33,7 @@ Principle: lean build-measure-learn. Ship the smallest working version first, th
   around a signal, not whole videos. Ask for 3–5 moments per call. Count every call and stop
   cleanly before the cap. Read limits from config, never assume.
 - **GitHub Actions minutes:** private repo = 2,000 free min/month. Scout + Tracker ~250,
-  Signals (comments only) ~60, Watcher (2/day, Gemini waits) ~300. Keep new schedules small.
+  Signals (comments only) ~60, Watcher (2/day, 4 parallel Gemini calls) ~500. Keep new schedules small.
 - **YouTube downloads may be blocked on GitHub's servers.** Downloading (yt-dlp, including
   chat replays and audio) and video rendering run in Colab if GitHub is blocked.
 
@@ -324,3 +324,11 @@ optional), evening batch (~19:00+), Colab render (Chunk C).
   video (socket timeout crashed the run; 1 call counted). Fix: timeout -> GeminiError
   (video marked `watch_failed`, run continues), 420 s per call, mediaResolution LOW,
   whole-video limit 15 min, run stops starting new calls after 22 min, unbuffered logs.
+- 2026-11-15: Second live Watcher run worked: model `gemini-3.8-flash` accepts YouTube
+  windows; 7 calls -> 14 moments (12 ready) in 22 min (~3 min per call, sequential); one
+  503 "high demand". Two Spanish videos slipped through (Latin script). Fixes: Gemini calls
+  run in parallel waves (`watcher.parallel_calls` = 4); 500/503/timeouts are `Transient`
+  -> one retry after 20 s, and the video is retried next run (not watch_failed); usage
+  counter thread-safe. Scout/Signals/Watcher drop Spanish/Portuguese titles
+  (`scout.foreign_chars`, 2+ `scout.foreign_words`; 'los' allowed for Los Santos) and
+  Scout drops videos whose declared language isn't en/hi. 82 tests.
