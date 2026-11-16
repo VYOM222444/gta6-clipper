@@ -371,4 +371,9 @@ optional), evening batch (~19:00+), Colab render (Chunk C).
   (git exit 128), and CalledProcessError printed the token in the URL. Owner told to
   delete and regenerate the token. Notebook fix (both): chdir to /content first, pass the
   token as an http.extraHeader (never in the URL), capture output, clear error message.
+- 2026-11-16: The fixed render notebook was overwritten on main by a "Created using Colab"
+  commit (owner saved the old open notebook back to GitHub; it also contained run outputs
+  with the v2 token, now revoked). Restored the fixed version and added
+  `tests/test_notebooks.py` (no outputs, no tokens, safe clone cell) so this can't pass
+  review again. Owner: never save notebooks back to GitHub from Colab.
 
