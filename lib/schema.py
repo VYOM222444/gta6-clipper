@@ -41,6 +41,7 @@ TABS = {
     "Posted": [
         "post_id", "batch_id", "moment_id", "brand", "platform", "url", "posted_at",
         "views_24h", "views_7d", "likes_7d", "comments_7d", "final_label",
+        "platform_id", "views_now", "likes_now", "comments_now", "stats_at",
     ],
     # Researcher notes on top/average GTA Shorts.
     "Research": [

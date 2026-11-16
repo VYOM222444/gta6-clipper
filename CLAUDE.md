@@ -182,6 +182,8 @@ agents/signals.py           # SIGNALS_MODE=api (GitHub: comments) / full (Colab:
 agents/watcher.py           # Gemini on Signals windows / short videos -> Moments (ready/rejected_*) [B2]
 agents/publish_batch.py     # batches/<date>.json -> Batch tab, validated                 [B2]
 batches/<date>.json         # Decider output, pushed on branch batch/<date>               [B2]
+agents/log_posts.py         # posts/<date>.json -> Posted tab; YouTube stats of our posts  [P]
+posts/<date>.json           # links the owner posted, pushed on branch posts/<date>       [P]
 agents/gatekeeper.py
 agents/researcher.py
 lib/gemini.py               # Gemini generateContent + YouTube windows, daily counter, model fallback [B2]
@@ -198,6 +200,7 @@ data/gemini_usage.json      # Gemini calls per Pacific day; committed by the Wat
 .github/workflows/signals.yml       # comments only, 01/07/11/19:11 UTC                   [B2]
 .github/workflows/watcher.yml       # after every Signals run + 04:47/12:47 UTC; commits usage [B2]
 .github/workflows/publish-batch.yml # on push to batch/** branches                        [B2]
+.github/workflows/log-posts.yml     # on posts/** pushes (main or posts/** branches)      [P]
 .github/workflows/tests.yml         # runs pytest on every PR / push to main              [S1]
 tests/                              # pytest; tests/fakes.py = in-memory sheet fakes      [S1]
 ```
@@ -255,6 +258,12 @@ optional), evening batch (~19:00+), Colab render (Chunk C).
    new branch `batch/<YYYY-MM-DD>` from main, push. The Publish batch workflow validates and
    writes the Batch tab; check its log for REJECTED lines and fix them.
 6. Tell the owner to approve with "yes" in the `approved` column.
+
+**Logging posts (when the owner pastes post links):** write `posts/<YYYY-MM-DD>.json`
+(format in `agents/log_posts.py`; one entry per clip per platform, URLs without tracking
+params), commit on branch `posts/<YYYY-MM-DD>` from main, push. The Log posts workflow
+fills the Posted tab; the Tracker workflow refreshes YouTube views of our posts every
+6 h (views_24h / views_7d frozen automatically). Instagram numbers: no free API.
 
 ## 11. Status / log
 
@@ -376,4 +385,12 @@ optional), evening batch (~19:00+), Colab render (Chunk C).
   with the v2 token, now revoked). Restored the fixed version and added
   `tests/test_notebooks.py` (no outputs, no tokens, safe clone cell) so this can't pass
   review again. Owner: never save notebooks back to GitHub from Colab.
+- 2026-11-16: **First clips posted.** Owner rendered the 5 test clips (CPU; Colab GPU quota
+  was used up) and posted all 5 on YouTube + Instagram (one per brand). Fixed token
+  permissions (fine-grained token needed Contents: Read-only). Posts log built:
+  `agents/log_posts.py` (log: posts/*.json -> Posted rows `<batch_id>-<platform>`, moment_id
+  from Batch; stats: YouTube views/likes/comments now, views_24h and views_7d frozen by age,
+  posted_at from YouTube publish time), `log-posts.yml`, stats step added to the Tracker
+  workflow. Posted columns added: platform_id, views_now, likes_now, comments_now, stats_at.
+  `posts/2026-11-16.json` holds the first 10 links. 102 tests.
 
