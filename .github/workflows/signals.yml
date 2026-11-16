@@ -2,11 +2,12 @@ name: Signals
 
 # GitHub part of Signals: timestamped comments only (YouTube blocks yt-dlp on GitHub).
 # Chat spikes + Most Replayed run in Colab: colab/signals.ipynb.
-# Twice a day at UTC 00:40 and 12:40 = IST 06:10 and 18:10, before the Watcher runs,
+# Four times a day at :11 (UTC 01:11, 07:11, 11:11, 19:11) so a skipped run is covered
+# by the next one; it only uses ~1 YouTube unit per video and skips videos already done.
 # plus a manual button: Actions > Signals > Run workflow.
 on:
   schedule:
-    - cron: "40 0,12 * * *"
+    - cron: "11 1,7,11,19 * * *"
   workflow_dispatch:
 
 permissions:

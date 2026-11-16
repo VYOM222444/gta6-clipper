@@ -56,7 +56,7 @@
         "gemini-3.8-flash",
         "gemini-flash-latest"
       ],
-      "runs_per_day": 2
+      "runs_per_day": 4
     },
     "bulk": {
       "daily_request_cap": 500,

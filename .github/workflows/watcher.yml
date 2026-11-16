@@ -1,11 +1,16 @@
 name: Watcher
 
 # Gemini checks the best Signals windows (and short videos with no signals).
-# Twice a day at UTC 04:00 and 13:00 = IST 09:30 and 18:30, plus a manual button.
+# Runs right after every Signals run, plus backup cron slots (GitHub sometimes skips
+# scheduled runs). The daily Gemini budget (15) is enforced in code, so extra runs just
+# stop early. Plus a manual button.
 # Saves data/gemini_usage.json (daily call counter) back to the repo.
 on:
   schedule:
-    - cron: "0 4,13 * * *"
+    - cron: "47 4,12 * * *"
+  workflow_run:
+    workflows: ["Signals"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:

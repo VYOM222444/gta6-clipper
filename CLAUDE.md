@@ -193,10 +193,10 @@ colab/signals.ipynb         # morning Colab run: chat spikes + Most Replayed (yt
 data/snapshots.csv          # append-only; committed by the Tracker workflow              [A]
 data/gemini_usage.json      # Gemini calls per Pacific day; committed by the Watcher workflow [B2]
 .github/workflows/setup-sheet.yml   # manual "Setup sheet" button                         [S1]
-.github/workflows/scout.yml         # every 6h at :23 UTC + manual button                 [A]
-.github/workflows/tracker.yml       # every 6h at :53 UTC + manual; commits snapshots.csv  [A]
-.github/workflows/signals.yml       # comments only, 00:40 + 12:40 UTC (06:10/18:10 IST)   [B2]
-.github/workflows/watcher.yml       # 04:00 + 13:00 UTC (09:30/18:30 IST); commits usage   [B2]
+.github/workflows/scout.yml         # every 6h at :37 UTC + manual button                 [A]
+.github/workflows/tracker.yml       # 01/07/13/19:07 UTC + manual; commits snapshots.csv  [A]
+.github/workflows/signals.yml       # comments only, 01/07/11/19:11 UTC                   [B2]
+.github/workflows/watcher.yml       # after every Signals run + 04:47/12:47 UTC; commits usage [B2]
 .github/workflows/publish-batch.yml # on push to batch/** branches                        [B2]
 .github/workflows/tests.yml         # runs pytest on every PR / push to main              [S1]
 tests/                              # pytest; tests/fakes.py = in-memory sheet fakes      [S1]
@@ -235,8 +235,9 @@ tests/                              # pytest; tests/fakes.py = in-memory sheet f
 
 ## 10. Daily schedule (IST) and the Decider procedure
 
-Automatic: Scout 05:53/11:53/17:53/23:53, Tracker 30 min later, Signals (comments) 06:10 and
-18:10, Watcher 09:30 and 18:30. Owner: morning Colab `colab/signals.ipynb` (Run all, ~7 AM,
+Automatic: Scout 06:07/12:07/18:07/00:07, Tracker 30 min later, Signals (comments) 06:41/
+12:41/16:41/00:41, Watcher right after each Signals run (+ backups 10:17/18:17); Gemini
+budget caps it at 15 calls/day. Owner: morning Colab `colab/signals.ipynb` (Run all, ~7 AM,
 optional), evening batch (~19:00+), Colab render (Chunk C).
 
 **Decider procedure (Claude in chat, when the owner says "make today's batch"):**
@@ -353,3 +354,10 @@ optional), evening batch (~19:00+), Colab render (Chunk C).
   underscores. "Mission Failed" was rejected by YouTube as a channel name, so that brand is
   now **Busted Again** (key `busted_again`, @bustedagainclips, orange FF9500, fails and
   funny bugs); its Instagram should be renamed to bustedagain.clips.
+- 2026-11-16: GitHub delayed or skipped several cron runs overnight (Scout 00:23 skipped,
+  Watcher 04:00 never ran; others ran 15 min-4.5 h late). Fix: odd-minute schedules,
+  Signals 4x/day, Watcher triggered by `workflow_run` after every Signals run plus 2 backup
+  cron slots; `gemini.watcher.runs_per_day` = 4 -> max 4 calls per run so the budget is
+  spread over the day (evening batch still gets fresh moments). Owner skipped the Gemini-limits and
+  watchlist tasks (no time): keep budget 15/day (429s are handled); watchlist to be filled
+  later from recurring Candidates channels.

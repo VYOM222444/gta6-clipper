@@ -1,11 +1,11 @@
 name: Tracker
 
-# Every 6 hours, 30 min after Scout (UTC 00:53, 06:53, 12:53, 18:53),
+# Every 6 hours, 30 min after Scout (UTC 01:07, 07:07, 13:07, 19:07),
 # plus a manual button: Actions > Tracker > Run workflow.
 # Saves data/snapshots.csv back to the repo after each run.
 on:
   schedule:
-    - cron: "53 */6 * * *"
+    - cron: "7 1,7,13,19 * * *"
   workflow_dispatch:
 
 permissions:
