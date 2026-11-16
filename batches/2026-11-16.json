@@ -1,0 +1,28 @@
+{
+  "batch_id": "2026-11-16",
+  "_note": "Test batch (pre-launch). Picked from Moments: top 2 ready by quality, one per brand style.",
+  "clips": [
+    {
+      "moment_id": "zpkbwr0HpCc-g232",
+      "brand": "neon_getaway",
+      "content_type": "news",
+      "hook_text": "Real life or GTA 6?",
+      "title_label": "REAL LIFE VS GTA 6",
+      "title": "GTA 6 vs real life Miami graphics comparison 🤯",
+      "description": "Side by side: real Miami car footage vs the same scene in GTA 6.\n🎥 Clip from Hazard\nFan channel. Not affiliated with Rockstar Games.",
+      "hashtags": "#GTA6 #GTA6Shorts #Shorts #GTA6Graphics #ViceCity",
+      "creator_credit": "Hazard"
+    },
+    {
+      "moment_id": "BA23aWqUV0I-g713",
+      "brand": "five_star_chaos",
+      "content_type": "reaction",
+      "hook_text": "GTA 6 fans right now",
+      "title_label": "EVERY GTA 6 FAN",
+      "title": "Every GTA 6 fan 3 days before launch 😂",
+      "description": "Joe Bartolozzi perfectly describes every GTA 6 fan before launch day.\n🎥 Clip from Joe Bartolozzi\nFan channel. Not affiliated with Rockstar Games.",
+      "hashtags": "#GTA6 #GTA6Shorts #Shorts #GTA6Launch #funny",
+      "creator_credit": "Joe Bartolozzi"
+    }
+  ]
+}
