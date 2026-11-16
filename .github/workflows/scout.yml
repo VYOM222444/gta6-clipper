@@ -1,10 +1,11 @@
 name: Scout
 
-# Every 6 hours (UTC 00:23, 06:23, 12:23, 18:23 = IST 05:53, 11:53, 17:53, 23:53),
+# Every 6 hours at :37 (UTC 00:37, 06:37, 12:37, 18:37 = IST 06:07, 12:07, 18:07, 00:07).
+# GitHub delays or skips cron runs at busy times (e.g. the top of the hour), so we use odd minutes;
 # plus a manual button: Actions > Scout > Run workflow.
 on:
   schedule:
-    - cron: "23 */6 * * *"
+    - cron: "37 */6 * * *"
   workflow_dispatch:
 
 permissions:
