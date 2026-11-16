@@ -1,6 +1,6 @@
 {
   "batch_id": "2026-11-16",
-  "_note": "Test batch (pre-launch). Picked from Moments: top 2 ready by quality, one per brand style.",
+  "_note": "Test batch (pre-launch): the 5 ready English moments by quality, one per brand.",
   "clips": [
     {
       "moment_id": "zpkbwr0HpCc-g232",
@@ -22,6 +22,39 @@
       "title": "Every GTA 6 fan 3 days before launch 😂",
       "description": "Joe Bartolozzi perfectly describes every GTA 6 fan before launch day.\n🎥 Clip from Joe Bartolozzi\nFan channel. Not affiliated with Rockstar Games.",
       "hashtags": "#GTA6 #GTA6Shorts #Shorts #GTA6Launch #funny",
+      "creator_credit": "Joe Bartolozzi"
+    },
+    {
+      "moment_id": "A9fifS608C8-g235",
+      "brand": "busted_again",
+      "content_type": "news",
+      "hook_text": "Your GTA 5 character is gone",
+      "title_label": "NO CHARACTER TRANSFER",
+      "title": "GTA 6 Online won't transfer your GTA 5 character",
+      "description": "GTA 6 Online reportedly won't let you bring over your GTA 5 character.\n🎥 Clip from gameranx\nFan channel. Not affiliated with Rockstar Games.",
+      "hashtags": "#GTA6 #GTA6Shorts #Shorts #GTA6Online #GTAOnline",
+      "creator_credit": "gameranx"
+    },
+    {
+      "moment_id": "LEXP66z1pyg-g265",
+      "brand": "neon_wanted",
+      "content_type": "news",
+      "hook_text": "The whole map, from day one",
+      "title_label": "FULL MAP UNLOCKED",
+      "title": "GTA 6 map unlocks right away? 🗺️",
+      "description": "GTA 6's huge map may be open from the start, with no locked regions.\n🎥 Clip from T5G\nFan channel. Not affiliated with Rockstar Games.",
+      "hashtags": "#GTA6 #GTA6Shorts #Shorts #GTA6Map #ViceCity",
+      "creator_credit": "T5G"
+    },
+    {
+      "moment_id": "BA23aWqUV0I-g62",
+      "brand": "wasted_again",
+      "content_type": "reaction",
+      "hook_text": "Midnight or morning?",
+      "title_label": "LAUNCH NIGHT DILEMMA",
+      "title": "GTA 6 launch: play at midnight or wait? 😩",
+      "description": "Joe Bartolozzi can't decide when to start playing GTA 6.\n🎥 Clip from Joe Bartolozzi\nFan channel. Not affiliated with Rockstar Games.",
+      "hashtags": "#GTA6 #GTA6Shorts #Shorts #GTA6Launch #gaming",
       "creator_credit": "Joe Bartolozzi"
     }
   ]
