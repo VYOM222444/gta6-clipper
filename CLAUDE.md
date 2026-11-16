@@ -366,4 +366,9 @@ optional), evening batch (~19:00+), Colab render (Chunk C).
   an unexpected keyword argument 'metadata_errors'" (Colab's newer PyAV vs faster-whisper's
   decoder). Fix: `render_batch.load_audio` decodes audio with ffmpeg to 16 kHz float32 and
   passes the array to Whisper; failed rows keep fetch_status=done if the file was fetched.
+- 2026-11-16: Second Colab run failed at the clone step: the last cell had `os.chdir`
+  into the repo, so re-running "Run all" deleted the working directory before cloning
+  (git exit 128), and CalledProcessError printed the token in the URL. Owner told to
+  delete and regenerate the token. Notebook fix (both): chdir to /content first, pass the
+  token as an http.extraHeader (never in the URL), capture output, clear error message.
 
