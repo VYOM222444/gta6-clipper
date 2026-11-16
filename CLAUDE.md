@@ -42,13 +42,13 @@ Principle: lean build-measure-learn. Ship the smallest working version first, th
 All content is clipped from other creators. One clip goes to exactly ONE brand, which posts
 it on its YouTube + Instagram (+ Facebook later). Never the same clip on two brands.
 
-| Brand | YouTube handle | Instagram |
-|---|---|---|
-| Wasted Again | @wastedagainclips | wastedagain.clips |
-| Neon Wanted | @neonwanted.clips | neonwanted.clips |
-| Mission Failed | @missionfailed.clips | missionfailed.clips |
-| Neon Getaway | @neongetaway.clips | neongetaway.clips |
-| Five Star Chaos | @fivestarchaos.clips | fivestarchaos.clips |
+| Brand | key | YouTube handle | Instagram |
+|---|---|---|---|
+| Wasted Again | wasted_again | @wastedagainclips | wastedagain.clips |
+| Neon Wanted | neon_wanted | @neonwanted_clips | neonwanted.clips |
+| Busted Again | busted_again | @bustedagainclips | bustedagain.clips (rename from missionfailed.clips) |
+| Neon Getaway | neon_getaway | @neongetaway_clips | neongetaway.clips |
+| Five Star Chaos | five_star_chaos | @fivestarchaos_clips | fivestarchaos.clips |
 
 All brands post mixed content. Every clip gets a content-type tag:
 `news`, `chaos`, `reaction`, `secret`, `tip`. Batch goal: 20 clips (4 per brand), scaled up
@@ -345,7 +345,11 @@ optional), evening batch (~19:00+), Colab render (Chunk C).
   `<output_dir>/<date>/<brand>/<batch_id>.mp4` + `.txt` (title, description, hashtags,
   source link). Batch columns added: output_path, rendered_at, template_version; statuses
   written with one batched update per clip (`sheets.set_values`). 5 brand templates v1
-  (accents: Wasted Again FF3B30, Neon Wanted FF2BD6, Mission Failed FF9500, Neon Getaway
+  (accents: Wasted Again FF3B30, Neon Wanted FF2BD6, Mission Failed (now Busted Again) FF9500, Neon Getaway
   00E5FF, Five Star Chaos FFD60A; fonts Anton + Poppins + Noto Sans Devanagari downloaded in
   Colab). Verified locally by rendering a test clip and checking frames. 95 tests.
   Not yet done: gameplay-aware reframing, split-screen facecam (Phase 3).
+- 2026-11-15: All 5 YouTube channels created. Handles with dots were taken, so they use
+  underscores. "Mission Failed" was rejected by YouTube as a channel name, so that brand is
+  now **Busted Again** (key `busted_again`, @bustedagainclips, orange FF9500, fails and
+  funny bugs); its Instagram should be renamed to bustedagain.clips.

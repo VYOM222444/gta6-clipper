@@ -43,8 +43,8 @@
     "TP": -1.5,
     "LRA": 11
   },
-  "brand": "mission_failed",
-  "name": "Mission Failed",
+  "brand": "busted_again",
+  "name": "Busted Again",
   "accent": "FF9500",
   "_mood": "orange: fails, funny bugs"
 }
