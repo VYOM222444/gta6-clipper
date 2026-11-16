@@ -99,7 +99,13 @@ def test_words_from_segments():
 
 
 def test_load_audio_is_16k_mono_float(tmp_path):
+    import shutil
     import subprocess
+
+    import pytest
+    pytest.importorskip("numpy")
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not installed here (Colab has it)")
     src = tmp_path / "a.mp4"
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
                     "sine=frequency=440:duration=2", "-ac", "2", str(src)], check=True)
