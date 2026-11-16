@@ -96,8 +96,22 @@ class Transcriber:
         print(f"Whisper '{size}' on {'GPU' if cuda else 'CPU'}")
 
     def words(self, path):
-        segments, info = self.model.transcribe(str(path), word_timestamps=True, vad_filter=True)
+        # Decode with ffmpeg ourselves: faster-whisper's own decoder (PyAV) breaks when Colab
+        # ships a newer PyAV ("open() got an unexpected keyword argument 'metadata_errors'").
+        audio = load_audio(path)
+        if audio.size == 0:
+            return [], ""
+        segments, info = self.model.transcribe(audio, word_timestamps=True, vad_filter=True)
         return words_from_segments(list(segments)), info.language
+
+
+def load_audio(path, sr=16000):
+    """Audio as mono float32 numpy array at 16 kHz (what Whisper expects), via ffmpeg."""
+    import numpy as np
+    p = subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-i", str(path),
+                        "-vn", "-ac", "1", "-ar", str(sr), "-f", "s16le", "-"],
+                       capture_output=True, check=True)
+    return np.frombuffer(p.stdout, np.int16).astype(np.float32) / 32768.0
 
 
 def render_one(row, cfg, transcriber, day, js_runtime):
@@ -160,6 +174,8 @@ def main():
             result = render_one(row, cfg, transcriber, day, js_runtime)
         except Exception as e:  # keep going with the other clips
             result = {"render_status": f"failed: {type(e).__name__}: {str(e)[:100]}"}
+            if (Path(cfg["work_dir"]) / f"{row['batch_id']}.src.mp4").exists():
+                result["fetch_status"] = "done"
         sheets.set_values(ws, headers, "batch_id", {row["batch_id"]: result})
         if result.get("render_status") == "done":
             ok += 1

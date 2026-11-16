@@ -96,3 +96,18 @@ def test_words_from_segments():
     seg = SimpleNamespace(words=[SimpleNamespace(word=" hi", start=0.1, end=0.3),
                                  SimpleNamespace(word=" ", start=0.3, end=0.31)])
     assert render_batch.words_from_segments([seg, SimpleNamespace(words=None)]) == [{"word": "hi", "start": 0.1, "end": 0.3}]
+
+
+def test_load_audio_is_16k_mono_float(tmp_path):
+    import shutil
+    import subprocess
+
+    import pytest
+    pytest.importorskip("numpy")
+    if not shutil.which("ffmpeg"):
+        pytest.skip("ffmpeg not installed here (Colab has it)")
+    src = tmp_path / "a.mp4"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+                    "sine=frequency=440:duration=2", "-ac", "2", str(src)], check=True)
+    a = render_batch.load_audio(src)
+    assert a.dtype.name == "float32" and abs(len(a) - 32000) < 400 and 0 < abs(a).max() <= 1.0

@@ -361,3 +361,9 @@ optional), evening batch (~19:00+), Colab render (Chunk C).
   spread over the day (evening batch still gets fresh moments). Owner skipped the Gemini-limits and
   watchlist tasks (no time): keep budget 15/day (429s are handled); watchlist to be filled
   later from recurring Candidates channels.
+- 2026-11-16: First test batch (5 clips, one per brand) published to the Batch tab and
+  approved. First Colab render: downloads worked, Whisper failed on all 5 with "open() got
+  an unexpected keyword argument 'metadata_errors'" (Colab's newer PyAV vs faster-whisper's
+  decoder). Fix: `render_batch.load_audio` decodes audio with ffmpeg to 16 kHz float32 and
+  passes the array to Whisper; failed rows keep fetch_status=done if the file was fetched.
+
