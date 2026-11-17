@@ -51,10 +51,18 @@ def test_to_absolute_relative_and_absolute_answers():
 
 
 def test_fit_length():
-    cfg = RULES["watcher"]
-    assert watcher.fit_length(10, 200, cfg) == (10, 10 + cfg["clip_max_seconds"])
-    assert watcher.fit_length(10, 12, cfg) == (10, 10 + cfg["clip_min_seconds"])
-    assert watcher.fit_length(-3, 20, cfg) == (0, 20)
+    assert watcher.fit_length(10, 200, 15, 30) == (10, 40)
+    assert watcher.fit_length(10, 25, 15, 30) == (10, 25)          # already long enough
+    assert watcher.fit_length(10, 15, 15, 30) == (7, 22)            # 3 s lead-in, rest after
+    assert watcher.fit_length(10, 13, 15, 30) == (7, 22)
+    assert watcher.fit_length(1, 5, 15, 30) == (0, 15)              # can't go before 0
+    assert watcher.fit_length(-3, 20, 15, 30) == (0, 20)
+
+
+def test_clip_range_per_content_type():
+    assert watcher.clip_range("chaos", RULES) == tuple(RULES["clip_length_seconds"]["chaos"])
+    w = RULES["watcher"]
+    assert watcher.clip_range("other", RULES) == (w["clip_min_seconds"], w["clip_max_seconds"])
 
 
 def gm(**kw):
@@ -136,7 +144,7 @@ def test_run_parallel_waves_failures_and_time_limit():
     ticks = iter([0, 0, 30 * 60])
     rows, wsig, wvid, notes = watcher.run(MixedGem([]), jobs, set(), set(), rules, 8, NOW,
                                           max_minutes=22, clock=lambda: next(ticks))
-    assert "a" not in wvid                      # busy: retried next run
+    assert wvid["a"] == "watch_retry"           # busy: retried next run
     assert wvid["b"] == "watch_failed"
     assert "c" not in wvid and "d" not in wvid  # second wave never started (time limit)
     assert any("stopped after 22 min" in n for n in notes)
@@ -152,3 +160,16 @@ def test_timeout_becomes_gemini_error(monkeypatch):
     import pytest
     with pytest.raises(gemini.Transient, match="no answer"):
         gemini._http_post("https://example.invalid/x", {}, "k", timeout=1)
+
+
+def test_busy_twice_gives_up_and_failed_videos_are_skipped():
+    from lib.gemini import Transient
+
+    class BusyGem(FakeGem):
+        def generate_json(self, parts, prompt, schema):
+            self.calls_this_run += 1
+            raise Transient("503 busy")
+    jobs = watcher.pick_jobs([cand("a", status="watch_retry")], [sig("a", 100, 160, 5)], RULES)
+    _, _, wvid, _ = watcher.run(BusyGem([]), jobs, set(), set(), RULES, 4, NOW)
+    assert wvid == {"a": "watch_failed"}
+    assert watcher.pick_jobs([cand("a", status="watch_failed")], [sig("a", 100, 160, 5)], RULES) == []

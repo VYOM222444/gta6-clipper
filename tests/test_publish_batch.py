@@ -26,7 +26,22 @@ def test_valid_clip_becomes_row():
     assert bad == []
     row = good[0]
     assert row["batch_id"] == "2026-11-20-01" and row["video_id"] == "v1"
-    assert row["start_s"] == 105 and row["end_s"] == 130 and row["approved"] == ""
+    assert row["start_s"] == 105 and row["end_s"] == 130
+    assert row["approved"] == ("yes" if S["batch"].get("auto_approve") else "")
+    assert row["ig_caption"].startswith("GTA 6 police chase") and "@creator" in row["ig_caption"]
+
+
+def test_auto_approve_off_and_ig_caption_checks():
+    s = {**S, "batch": {**S["batch"], "auto_approve": False}}
+    good, _ = publish_batch.build_rows({"batch_id": "d", "clips": [clip()]}, MOMENTS, [], s, R)
+    assert good[0]["approved"] == ""
+    good, bad = publish_batch.build_rows(
+        {"batch_id": "d", "clips": [clip(ig_caption="x" * 130 + "\nno credit, no tag")]}, MOMENTS, [], S, R)
+    msg = " | ".join(bad[0][1])
+    assert "first line" in msg and "credit" in msg and "#GTA6" in msg
+    ok = "GTA 6 cop flip 😂\n🎥 @creator\n#GTA6 #Shorts"
+    good, bad = publish_batch.build_rows({"batch_id": "d", "clips": [clip(ig_caption=ok)]}, MOMENTS, [], S, R)
+    assert bad == [] and good[0]["ig_caption"] == ok
 
 
 def test_problems_are_reported():

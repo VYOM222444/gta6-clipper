@@ -111,7 +111,9 @@
     "tip"
   ],
   "batch": {
-    "clips_per_brand": 4
+    "clips_per_brand": 5,
+    "auto_approve": true,
+    "_note": "auto_approve: new Batch rows get approved=yes, so the render runs without a click. The owner glances at each clip while uploading to YouTube; type \"no\" in approved to stop one."
   },
   "render": {
     "whisper_model": "small",

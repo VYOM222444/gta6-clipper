@@ -5,8 +5,11 @@ Two jobs (both safe to re-run):
          -> one Posted row per clip per platform (post_id = <batch_id>-<platform>).
          moment_id comes from the Batch tab. Existing rows keep their numbers.
   stats  for YouTube posts: views/likes/comments now (1 quota unit per 50 videos);
-         views_24h is frozen the first time a post is >= 24 h old, views_7d / likes_7d /
-         comments_7d at >= 7 days. posted_at comes from YouTube's publish time.
+         checkpoints views_6h / 12h / 24h / 48h / 7d are frozen once a post passes that age.
+         Stats only run every 6 h, so the value is interpolated between the last reading
+         and this one (or from 0 views at posting time, if that's the only reading and it
+         isn't too far past the checkpoint; otherwise it stays blank rather than wrong).
+         likes_7d / comments_7d: first reading after 7 days. posted_at = YouTube publish time.
          Instagram has no free view API: those numbers are filled in by hand (or left blank).
 
 posts/<date>.json format:
@@ -64,6 +67,25 @@ def rows_from_file(data, batch_rows):
     return out
 
 
+CHECKPOINTS = [(6, "views_6h"), (12, "views_12h"), (24, "views_24h"), (48, "views_48h"),
+               (24 * 7, "views_7d")]
+
+
+def checkpoint_value(cp, age, views, prev_age=None, prev_views=None):
+    """Estimated views at `cp` hours, or None if not reached / no honest estimate."""
+    if age < cp:
+        return None
+    if prev_age is not None and prev_views is not None and prev_age <= cp:
+        a, va = prev_age, prev_views
+    elif age <= 2 * cp:
+        a, va = 0.0, 0
+    else:
+        return None
+    if age <= a:
+        return views
+    return int(round(va + (views - va) * (cp - a) / (age - a)))
+
+
 def update_stats(row, video, now):
     """New values for one YouTube Posted row, given its videos.list item."""
     st = video.get("statistics", {})
@@ -76,10 +98,17 @@ def update_stats(row, video, now):
         upd["posted_at"] = published
     start = parse_time(published or row.get("posted_at") or iso(now))
     age_h = (now - start).total_seconds() / 3600
-    if age_h >= 24 and str(row.get("views_24h", "")) == "":
-        upd["views_24h"] = views
-    if age_h >= 24 * 7 and str(row.get("views_7d", "")) == "":
-        upd.update(views_7d=views, likes_7d=likes, comments_7d=comments)
+    prev_age = prev_views = None
+    if str(row.get("stats_at", "")) and str(row.get("views_now", "")) != "":
+        prev_age = (parse_time(row["stats_at"]) - start).total_seconds() / 3600
+        prev_views = int(float(row["views_now"]))
+    for cp, col in CHECKPOINTS:
+        if str(row.get(col, "")) == "":
+            v = checkpoint_value(cp, age_h, views, prev_age, prev_views)
+            if v is not None:
+                upd[col] = v
+    if age_h >= 24 * 7 and str(row.get("likes_7d", "")) == "":
+        upd.update(likes_7d=likes, comments_7d=comments)
     return upd
 
 
@@ -89,7 +118,7 @@ def log(ws, batch_rows, paths):
         with open(path, encoding="utf-8") as f:
             rows += rows_from_file(json.load(f), batch_rows)
     keep = ("posted_at", "views_24h", "views_7d", "likes_7d", "comments_7d", "final_label",
-            "views_now", "likes_now", "comments_now", "stats_at")
+            "views_now", "likes_now", "comments_now", "stats_at", "views_6h", "views_12h", "views_48h")
     return sheets.upsert_rows(ws, TABS[TAB], "post_id", rows, preserve=keep)
 
 

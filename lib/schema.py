@@ -11,7 +11,7 @@ TABS = {
         "video_id", "url", "title", "channel_id", "channel_title", "published_at",
         "kind", "duration_s", "views", "subscribers", "age_h", "views_per_hour",
         "outlier_score", "is_watchlist", "campaign_lead", "campaign_link",
-        "found_at", "status", "score", "found_by", "updated_at",
+        "found_at", "status", "score", "found_by", "updated_at", "signals_at",
     ],
     # Tracker summary: one row per tracked video, latest numbers.
     "Tracker": [
@@ -35,13 +35,19 @@ TABS = {
         "batch_id", "moment_id", "video_id", "start_s", "end_s", "brand",
         "content_type", "hook_text", "title_label", "title", "description",
         "hashtags", "creator_credit", "approved", "fetch_status", "render_status",
-        "output_path", "rendered_at", "template_version",
+        "output_path", "rendered_at", "template_version", "ig_caption",
     ],
     # Owner logs every post here; Analyst fills in results.
     "Posted": [
         "post_id", "batch_id", "moment_id", "brand", "platform", "url", "posted_at",
         "views_24h", "views_7d", "likes_7d", "comments_7d", "final_label",
         "platform_id", "views_now", "likes_now", "comments_now", "stats_at",
+        "views_6h", "views_12h", "views_48h",
+    ],
+    # Trending words/phrases in fast-growing GTA 6 titles (Scout, every run).
+    "Keywords": [
+        "phrase", "score", "videos", "prev_score", "trend", "example_title",
+        "first_seen", "updated_at",
     ],
     # Researcher notes on top/average GTA Shorts.
     "Research": [

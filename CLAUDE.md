@@ -40,7 +40,8 @@ Principle: lean build-measure-learn. Ship the smallest working version first, th
 ## 3. Channels (brands)
 
 All content is clipped from other creators. One clip goes to exactly ONE brand, which posts
-it on its YouTube + Instagram (+ Facebook later). Never the same clip on two brands.
+it on its YouTube + Instagram + Facebook (Facebook: Instagram auto-share for now; Meta API
+with the Instagram auto-post). Never the same clip on two brands.
 
 | Brand | key | YouTube handle | Instagram |
 |---|---|---|---|
@@ -60,7 +61,8 @@ gradually.
 - **GitHub Actions**: scheduled jobs (Scout, Tracker, Researcher data collection, Gemini calls).
 - **Google Sheet "GTA6 Clipper"**: the human-readable dashboard.
   Sheet ID: `1hq8aaJVeoPyUzQv01V1zJwxAMYvVIee5fx1ri33el9E`
-  Tabs: `Candidates`, `Tracker`, `Moments`, `Playbook`, `Batch`, `Posted`, `Research`.
+  Tabs: `Candidates`, `Tracker`, `Moments`, `Playbook`, `Batch`, `Posted`, `Research`,
+  `Keywords`.
   Column layout of every tab lives in `lib/schema.py` (append new columns at the END only).
   Written via a Google service account (key in `GOOGLE_SERVICE_ACCOUNT_JSON`; sheet already
   shared with the service account as Editor). All sheet access goes through `lib/sheets.py`.
@@ -81,8 +83,11 @@ Design rules:
    they communicate through the sheet / CSV files.
 3. Use AI only where judgment is needed. Everything else is plain Python.
 4. Every agent can be re-run on its own and is safe to re-run (idempotent, skips done work).
-5. Human checkpoints: owner approves the batch before fetching, and reviews every clip
-   before posting.
+5. Human checkpoint (decided 2026-11-17): batches are auto-approved
+   (`settings.batch.auto_approve`), so the render runs without a click. Safety comes from
+   the Gatekeeper + the owner glancing at every clip while uploading it to YouTube (skip
+   anything wrong; "no" in `approved` stops a clip before rendering). Instagram auto-post
+   (when built) only posts after a veto window.
 
 ## 5. The agents (in pipeline order)
 
@@ -184,6 +189,7 @@ agents/publish_batch.py     # batches/<date>.json -> Batch tab, validated       
 batches/<date>.json         # Decider output, pushed on branch batch/<date>               [B2]
 agents/log_posts.py         # posts/<date>.json -> Posted tab; YouTube stats of our posts  [P]
 posts/<date>.json           # links the owner posted, pushed on branch posts/<date>       [P]
+lib/keywords.py             # trending phrases from Scout titles -> Keywords tab (Scout run) [L]
 agents/gatekeeper.py
 agents/researcher.py
 lib/gemini.py               # Gemini generateContent + YouTube windows, daily counter, model fallback [B2]
@@ -247,23 +253,27 @@ optional), evening batch (~19:00+), Colab render (Chunk C).
 1. Read the sheet (Google Drive connector `read_file_content` on the sheet ID): `Moments`
    rows with `source=watcher` and `gate_status=ready`; `Batch` and `Posted` for what's used.
 2. Pick the best moments (quality, freshness, Tracker label of the source video, variety
-   of content types/creators). Start with 1 clip per brand (5/day); scale later.
+   of content types/creators). Target: one evening batch, up to 5 clips per brand
+   (25/day, `settings.batch.clips_per_brand`); ramp 1 -> 3 -> 5 per brand in launch week.
+   Use the `Keywords` tab (trend rising/new, updated in the last 12 h) for titles.
 3. Assign each to exactly ONE brand, spreading content types across brands.
 4. Write per clip: `hook_text` (<= 6 words, works muted), `title_label` (2–5 words, caps),
    `title` (search phrase first, <= 60 chars), `description` (line 1 what happens + "GTA 6",
    line 2 "🎥 Clip from @creator", then the disclaimer from rules.json), `hashtags`
-   (#GTA6 #GTA6Shorts #Shorts + 1–2 topic tags), `creator_credit` (@handle or channel name).
-   Follow PLAYBOOK.md.
+   (#GTA6 #GTA6Shorts #Shorts + 1–2 topic tags), `creator_credit` (@handle or channel name),
+   `ig_caption` (Instagram + Facebook: line 1 = keywords + what happens, <= 125 chars;
+   line 2 "🎥 @creator"; disclaimer; hashtags). Follow PLAYBOOK.md.
 5. Save `batches/<YYYY-MM-DD>.json` (format in `agents/publish_batch.py`), commit on a
    new branch `batch/<YYYY-MM-DD>` from main, push. The Publish batch workflow validates and
    writes the Batch tab; check its log for REJECTED lines and fix them.
-6. Tell the owner to approve with "yes" in the `approved` column.
+6. Clips are auto-approved; tell the owner the batch is in and to run the Colab render.
 
 **Logging posts (when the owner pastes post links):** write `posts/<YYYY-MM-DD>.json`
 (format in `agents/log_posts.py`; one entry per clip per platform, URLs without tracking
 params), commit on branch `posts/<YYYY-MM-DD>` from main, push. The Log posts workflow
 fills the Posted tab; the Tracker workflow refreshes YouTube views of our posts every
-6 h (views_24h / views_7d frozen automatically). Instagram numbers: no free API.
+6 h; checkpoints views_6h / 12h / 24h / 48h / 7d are frozen automatically (interpolated
+between 6-hourly readings). Instagram numbers: no free API until the Meta app (PR 6).
 
 ## 11. Status / log
 
@@ -393,4 +403,25 @@ fills the Posted tab; the Tracker workflow refreshes YouTube views of our posts 
   posted_at from YouTube publish time), `log-posts.yml`, stats step added to the Tracker
   workflow. Posted columns added: platform_id, views_now, likes_now, comments_now, stats_at.
   `posts/2026-11-16.json` holds the first 10 links. 102 tests.
+- 2026-11-17 (decisions): reviewed a loophole list (strategy, SEO, editing). Owner chose:
+  one batch/day, up to 25 clips (5 per brand); no Sheet approval (auto-approve, glance while
+  uploading); YouTube stays manual with YouTube Studio scheduling (API uploads from an
+  unaudited project stay private; audit not worth it now); one editing style for all
+  brands, derived from what winning Shorts do (Researcher) — only the accent colour differs;
+  learn from own Shorts at 6/12/24/48 h checkpoints; Facebook added (Instagram auto-share
+  now, Meta API later); Kaggle render later (Colab is fine). Build plan, one PR each:
+  1 launch pack, 2 Researcher (full, daily), 3 Gatekeeper + saturation, 4 auto-Decider
+  (Gemini), 5 editing pack (from Researcher findings) + Demucs music removal, 6 Instagram +
+  Facebook auto-post, 7 Kaggle render test, 8 smart crop + facecam split-screen.
+- 2026-11-17 (PR 1, launch pack): Signals (api) re-checks comments of videos < 48 h old every
+  6 h (Candidates.signals_at; new windows overlapping known moments are dropped; up to 12
+  videos/run; Hindi/extra reaction words). Watcher: clip length per content type
+  (`clip_length_seconds`), a too-short clip gets <= 3 s lead-in before the action then the
+  rest after (no dead air first); "Gemini busy" retried once (watch_retry) then
+  watch_failed; watch_failed videos are skipped for signal jobs too. Hook text moved above
+  the title label (templates v2, `hook.y`). Batch: `ig_caption` column (validated, default
+  built from title), auto-approve. Scout: keyword miner -> `Keywords` tab (phrase, score,
+  videos, trend vs last run). Posted: views_6h/12h/48h added; checkpoints interpolated.
+  `sheets.upsert_rows` now keeps columns a record doesn't mention (Scout no longer blanks
+  Signals' columns, re-publishing a batch no longer blanks render columns).
 

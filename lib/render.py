@@ -115,7 +115,9 @@ def build_ass(tpl, chunks, title_label, hook_text, credit, duration, src_w=1920,
     label_y = lab["y"] if not vertical else 300
     cap_y = min(cap["y"], SAFE_BOTTOM - cap["size"]) if not vertical else SAFE_BOTTOM - 160
     credit_y = top + fg_h + 28 if not vertical else SAFE_BOTTOM - 40
-    hook_y = top + fg_h // 2 if not vertical else H // 2
+    # hook sits ABOVE the title label, never on the gameplay (the payoff happens in the
+    # first seconds, right where a centred hook would cover it)
+    hook_y = hk.get("y", 250) if not vertical else hk.get("y_vertical", 480)
 
     head = f"""[Script Info]
 ScriptType: v4.00+
@@ -196,4 +198,5 @@ def post_text(row):
             f"TITLE:\n{row.get('title', '')}\n\n"
             f"DESCRIPTION:\n{row.get('description', '')}\n\n"
             f"HASHTAGS:\n{row.get('hashtags', '')}\n\n"
+            f"INSTAGRAM / FACEBOOK CAPTION:\n{row.get('ig_caption', '')}\n\n"
             f"SOURCE: https://youtu.be/{row.get('video_id', '')}?t={row.get('start_s', '')}\n")
