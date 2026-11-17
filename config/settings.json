@@ -65,6 +65,16 @@
         "gemini-3.5-flash-lite",
         "gemini-flash-lite-latest"
       ]
+    },
+    "researcher": {
+      "models": [
+        "gemini-3.8-flash-lite",
+        "gemini-flash-lite-latest"
+      ],
+      "daily_budget": 45,
+      "parallel_calls": 4,
+      "max_run_minutes": 15,
+      "_note": "Flash-Lite has a much higher free limit than Flash (~500/day reported). Own counter: data/gemini_usage_researcher.json"
     }
   },
   "schedules": {
@@ -126,5 +136,47 @@
       "Noto Sans Devanagari": "https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth,wght%5D.ttf"
     },
     "max_clips_per_run": 10
+  },
+  "researcher": {
+    "_note": "Daily study of GTA 6 Shorts 3-14 days old: winners vs average -> Playbook tab (research.*).",
+    "searches": [
+      {
+        "q": "GTA 6 #shorts"
+      },
+      {
+        "q": "GTA 6 funny"
+      },
+      {
+        "q": "GTA 6 gameplay #shorts"
+      },
+      {
+        "q": "GTA 6 news"
+      },
+      {
+        "q": "GTA 6 secret"
+      },
+      {
+        "q": "GTA 6",
+        "lang": "hi"
+      }
+    ],
+    "orders": [
+      "viewCount",
+      "relevance"
+    ],
+    "min_age_days": 3,
+    "max_age_days": 14,
+    "max_duration_s": 180,
+    "run_budget_units": 1400,
+    "winner_share": 0.15,
+    "average_band": [
+      0.3,
+      0.7
+    ],
+    "low_share": 0.3,
+    "analyze_per_label": 20,
+    "window_days": 7,
+    "min_group": 8,
+    "min_diff": 0.15
   }
 }
