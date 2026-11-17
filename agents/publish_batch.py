@@ -14,7 +14,7 @@ owner approves by typing "yes".
 `ig_caption` (Instagram has no title: the first line is all people see, and Instagram
 search reads it) is optional; if missing it is built from title + credit + hashtags.
 
-Batch file format:
+Batch file format ("start_index" optional: number of the first clip, for top-ups):
 {"batch_id": "2026-11-20",
  "clips": [{"moment_id": "...", "brand": "wasted_again", "content_type": "chaos",
             "hook_text": "...", "title_label": "...", "title": "...",
@@ -98,7 +98,7 @@ def default_ig_caption(clip, rules):
 def build_rows(batch, moments_by_id, batch_rows, settings, rules):
     good, bad = [], []
     auto = "yes" if settings.get("batch", {}).get("auto_approve") else ""
-    for i, clip in enumerate(batch.get("clips", []), start=1):
+    for i, clip in enumerate(batch.get("clips", []), start=int(batch.get("start_index", 1))):
         clip_id = f"{batch['batch_id']}-{i:02d}"
         m = moments_by_id.get(str(clip.get("moment_id")))
         problems = validate(clip, m, batch_rows, settings, rules, clip_id)

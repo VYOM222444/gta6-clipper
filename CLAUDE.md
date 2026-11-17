@@ -138,9 +138,12 @@ The **Playbook** (`playbook/PLAYBOOK.md` + `playbook/rules.json`) is read by eve
    (overlapping weaker moment of the same video), rejected_saturated (other Shorts that
    reference the source and share >= 2 keywords with the moment already have >= 20k views).
    Notes in Moments `saturation` / `gate_note`. Promo is gated by the Watcher.
-7. **Decider (Claude in chat)** — scores approved moments, assigns each to one brand, writes
-   hook text, top title label, title, description and hashtags. Output → `Batch` tab, which
-   the Fetcher reads.
+7. **Decider** — automatic every evening (`agents/decider.py`, ~18:00 IST): picks ready
+   moments (quality + Tracker label - age - partly-clipped), assigns ONE brand each
+   (Python), writes hook / label / title / description / hashtags / ig_caption with one
+   Gemini text call (fallback text if Gemini fails), validates and writes the `Batch` tab
+   (auto-approved) + `batches/<date>.json`. Claude in chat can still make or fix a batch by
+   hand (procedure below).
 8. **Fetcher (Colab)** — downloads only the chosen segments (`yt-dlp --download-sections`)
    to Google Drive, one folder per brand.
 9. **Renderer (Colab)** — Whisper word timestamps (model from Hugging Face), crop/reframe to
@@ -189,6 +192,9 @@ agents/tracker.py           # 6-hourly snapshots -> data/snapshots.csv + Tracker
 agents/signals.py           # SIGNALS_MODE=api (GitHub: comments) / full (Colab: + chat, Most Replayed) [B1,B2]
 agents/watcher.py           # Gemini on Signals windows / short videos -> Moments (ready/rejected_*) [B2]
 agents/publish_batch.py     # batches/<date>.json -> Batch tab, validated                 [B2]
+agents/decider.py           # automatic evening batch -> Batch tab + batches/<date>.json   [D]
+.github/workflows/decider.yml       # scheduler ~18:00 IST + backup cron 12:53 UTC; guard; commits batch [D]
+data/gemini_usage_decider.json      # Decider's own Gemini counter                         [D]
 batches/<date>.json         # Decider output, pushed on branch batch/<date>               [B2]
 agents/log_posts.py         # posts/<date>.json -> Posted tab; YouTube stats of our posts  [P]
 posts/<date>.json           # links the owner posted, pushed on branch posts/<date>       [P]
@@ -261,7 +267,10 @@ Automatic (since 2026-11-17 GitHub cron is only a backup; it skipped ~half the r
 - Watcher backup cron 12:47 UTC (18:17 IST). Researcher daily ~07:00 IST (scheduler) +
   backup cron 01:23 UTC. Gemini: Watcher 15 Flash calls/day + 30 Flash-Lite fallback calls/day
   (own counter `watcher:gemini-flash-lite-latest`), max 8 calls per run.
-Owner: morning Colab `colab/signals.ipynb` (optional), evening batch (~19:00+), Colab render.
+- Decider (today's batch) ~18:00 IST (scheduler `startDecider`) + backup cron 12:53 UTC.
+  Launch ramp (`batch.clips_per_brand_by_date`): 1 clip/brand from Nov 19, 3 from Nov 21,
+  5 from Nov 23.
+Owner: evening Colab render (~19:00+) + YouTube uploads; morning Colab signals (optional).
 
 **Reliable scheduler setup (once, on the laptop, ~10 min):**
 1. GitHub > Settings > Developer settings > Fine-grained tokens > Generate: name
@@ -274,7 +283,8 @@ Owner: morning Colab `colab/signals.ipynb` (optional), evening batch (~19:00+), 
    app is unverified: Advanced > Go to project). Then run `startPipeline` once: the log
    must say `scout.yml: HTTP 204 (started)`.
 
-**Decider procedure (Claude in chat, when the owner says "make today's batch"):**
+**Manual Decider procedure (Claude in chat, only when the owner asks to make or fix a batch by
+hand; normally `agents/decider.py` does this automatically):**
 1. Read the sheet (Google Drive connector `read_file_content` on the sheet ID): `Moments`
    rows with `source=watcher` and `gate_status=ready`; `Batch` and `Posted` for what's used.
 2. Pick the best moments (quality, freshness, Tracker label of the source video, variety
@@ -505,4 +515,17 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   / slurs (English + Hindi, `rules.captions.mask_words`, `word*` = prefix) masked in burned-in
   captions ("f******"). Open decision for the owner: make the repo public for unlimited
   Actions minutes (then raise the Watcher budget). 138 tests.
+- 2026-11-17 (PR 5, auto-Decider): `agents/decider.py` + `decider.yml` + Apps Script
+  `startDecider` (daily 18:00 IST). Pick: ready watcher moments <= 48 h old, score = quality
+  + Tracker label bonus (Breakout 1.5, Rising 1, Fading -1...) - 0.03/h after 6 h - 0.5 per
+  "N Shorts already show it"; max 2 per video, 3 per creator. Assign: per-brand target from
+  the ramp; best clip -> brand with most free slots, preferring brands without that content
+  type / creator. Text: one Gemini call (models Flash -> Flash-Lite, own budget 4/day,
+  counter `data/gemini_usage_decider.json`) with rising Keywords (last 12 h) + Researcher SEO
+  DO-rules; `finish_clip` enforces limits (hook <= 6 words, label 2-5 caps words, title
+  starts with GTA 6 and <= 60 chars, base + <= 2 clean topic hashtags, description with
+  credit + disclaimer, ig_caption). Re-runs top up today's batch (`start_index` in
+  publish_batch). Creator credit = channel name (handles not known yet). Gemini: no
+  mediaResolution for text-only calls. Owner must re-paste the Apps Script and run
+  installTriggers again to add startDecider. 146 tests.
 
