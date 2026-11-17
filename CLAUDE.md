@@ -268,8 +268,8 @@ Automatic (since 2026-11-17 GitHub cron is only a backup; it skipped ~half the r
   backup cron 01:23 UTC. Gemini: Watcher 15 Flash calls/day + 30 Flash-Lite fallback calls/day
   (own counter `watcher:gemini-flash-lite-latest`), max 8 calls per run.
 - Decider (today's batch) ~18:00 IST (scheduler `startDecider`) + backup cron 12:53 UTC.
-  Launch ramp (`batch.clips_per_brand_by_date`): 1 clip/brand from Nov 19, 3 from Nov 21,
-  5 from Nov 23.
+  5 clips per brand every day from Nov 18 (owner's choice, no ramp; optional
+  `batch.clips_per_brand_by_date` changes the number from a date on).
 Owner: evening Colab render (~19:00+) + YouTube uploads; morning Colab signals (optional).
 
 **Reliable scheduler setup (once, on the laptop, ~10 min):**
@@ -289,7 +289,7 @@ hand; normally `agents/decider.py` does this automatically):**
    rows with `source=watcher` and `gate_status=ready`; `Batch` and `Posted` for what's used.
 2. Pick the best moments (quality, freshness, Tracker label of the source video, variety
    of content types/creators). Target: one evening batch, up to 5 clips per brand
-   (25/day, `settings.batch.clips_per_brand`); ramp 1 -> 3 -> 5 per brand in launch week.
+   (25/day, `settings.batch.clips_per_brand`).
    Use the `Keywords` tab (trend rising/new, updated in the last 12 h) for titles.
 3. Assign each to exactly ONE brand, spreading content types across brands.
 4. Write per clip: `hook_text` (<= 6 words, works muted), `title_label` (2–5 words, caps),

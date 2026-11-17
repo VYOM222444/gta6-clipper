@@ -140,12 +140,8 @@
     "clips_per_brand": 5,
     "auto_approve": true,
     "_note": "auto_approve: new Batch rows get approved=yes, so the render runs without a click. The owner glances at each clip while uploading to YouTube; type \"no\" in approved to stop one.",
-    "clips_per_brand_by_date": {
-      "2026-11-19": 1,
-      "2026-11-21": 3,
-      "2026-11-23": 5
-    },
-    "_ramp_note": "Launch ramp: 1 clip per brand from Nov 19, 3 from Nov 21, 5 (clips_per_brand) from Nov 23."
+    "clips_per_brand_by_date": {},
+    "_ramp_note": "Owner's choice (2026-11-17): 5 clips per brand every day from Nov 18, no ramp. Add {\"YYYY-MM-DD\": n} entries here to change the number from a date on."
   },
   "render": {
     "whisper_model": "small",
