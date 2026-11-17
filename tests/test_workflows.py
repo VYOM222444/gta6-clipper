@@ -19,7 +19,8 @@ def test_chain_targets_exist_and_link_in_order():
 
 
 def test_scheduled_workflows_have_a_guard():
-    for name, job in [("scout.yml", "scout"), ("watcher.yml", "watch"), ("researcher.yml", "research")]:
+    for name, job in [("scout.yml", "scout"), ("watcher.yml", "watch"), ("researcher.yml", "research"),
+                      ("decider.yml", "decide")]:
         t = text(name)
         assert "cron:" in t and "  guard:" in t and f'.name=="{job}"' in t, name
         assert re.search(rf"  {job}:\n    needs: guard\n    if: needs.guard.outputs.skip != 'true'", t), name

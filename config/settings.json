@@ -83,6 +83,14 @@
       "max_run_minutes": 15,
       "_note": "Flash-Lite has a much higher free limit than Flash (~500/day reported). Own counter: data/gemini_usage_researcher.json",
       "requests_per_minute": 10
+    },
+    "decider": {
+      "models": [
+        "gemini-3.8-flash",
+        "gemini-flash-lite-latest"
+      ],
+      "daily_budget": 4,
+      "_note": "One text-only call per evening batch (+ retries). Own counter data/gemini_usage_decider.json."
     }
   },
   "schedules": {
@@ -131,7 +139,13 @@
   "batch": {
     "clips_per_brand": 5,
     "auto_approve": true,
-    "_note": "auto_approve: new Batch rows get approved=yes, so the render runs without a click. The owner glances at each clip while uploading to YouTube; type \"no\" in approved to stop one."
+    "_note": "auto_approve: new Batch rows get approved=yes, so the render runs without a click. The owner glances at each clip while uploading to YouTube; type \"no\" in approved to stop one.",
+    "clips_per_brand_by_date": {
+      "2026-11-19": 1,
+      "2026-11-21": 3,
+      "2026-11-23": 5
+    },
+    "_ramp_note": "Launch ramp: 1 clip per brand from Nov 19, 3 from Nov 21, 5 (clips_per_brand) from Nov 23."
   },
   "render": {
     "whisper_model": "small",
@@ -186,5 +200,22 @@
     "window_days": 7,
     "min_group": 8,
     "min_diff": 0.15
+  },
+  "decider": {
+    "_note": "Automatic evening batch (agents/decider.py).",
+    "max_moment_age_hours": 48,
+    "max_per_video": 2,
+    "max_per_creator": 3,
+    "label_bonus": {
+      "Breakout": 1.5,
+      "Rising": 1.0,
+      "Watching": 0.3,
+      "Steady": 0,
+      "Fading": -1.0,
+      "Mature": -1.0,
+      "Gone": -2.0
+    },
+    "age_penalty_per_hour": 0.03,
+    "partly_clipped_penalty": 0.5
   }
 }

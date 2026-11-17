@@ -1,0 +1,89 @@
+name: Decider
+
+# Evening batch: picks today's clips from ready moments, one brand each, writes hooks /
+# titles / captions (one Gemini text call), writes the Batch tab (auto-approved) and saves
+# batches/<date>.json. Started by the Apps Script scheduler (~18:00 IST) with a backup cron
+# at 12:53 UTC (18:23 IST); a guard skips the run if it really ran < 10 h ago. The manual
+# button always runs (tops up today's batch to the target).
+on:
+  schedule:
+    - cron: "53 12 * * *"
+  workflow_dispatch:
+    inputs:
+      from_trigger:
+        description: "Set by the external scheduler: skip if it ran recently"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: decider
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    # Skip a scheduled / external-trigger run if decide really ran < 10 h ago (overlapping
+    # triggers). Manual button and chain starts always run.
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -z "${{ inputs.from_trigger }}" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          last=""
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/decider.yml/runs?status=success&per_page=8" -q '.workflow_runs[].id'); do
+            last=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs" -q '.jobs[] | select(.name=="decide" and .conclusion=="success") | .started_at')
+            [ -n "$last" ] && break
+          done
+          if [ -n "$last" ] && [ $(( $(date +%s) - $(date -d "$last" +%s) )) -lt $(( 10 * 3600 )) ]; then
+            echo "Last real run started $last (< 10 h ago): skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Last real run: ${last:-never}. Running."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  decide:
+    needs: guard
+    if: needs.guard.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Make today's batch
+        env:
+          PYTHONUNBUFFERED: "1"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m agents.decider
+      - name: Save batch file and Gemini counter
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for f in batches data/gemini_usage_decider.json; do
+            [ -e "$f" ] && git add "$f"
+          done
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "decider: batch $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push && exit 0
+            sleep 5
+          done
+          exit 1

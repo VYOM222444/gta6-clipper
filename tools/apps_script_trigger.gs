@@ -4,7 +4,8 @@
  * Why: GitHub skips or delays many scheduled (cron) runs. Google's time-driven triggers are
  * reliable, so this script asks GitHub to start the workflows instead:
  *   startPipeline()   every 6 hours -> Scout (which then starts Tracker -> Signals -> Watcher)
- *   startResearcher() once a day    -> Researcher
+ *   startResearcher() once a day    -> Researcher (~07:00 IST)
+ *   startDecider()    once a day    -> Decider: today's batch (~18:00 IST)
  * Each workflow has a guard job: if it really ran recently it skips, so overlapping with
  * GitHub's own (backup) schedule is harmless.
  *
@@ -49,11 +50,18 @@ function startResearcher() {
   dispatch_('researcher.yml');
 }
 
+function startDecider() {
+  dispatch_('decider.yml');
+}
+
 /** Run this once by hand: creates both timers (deletes old ones first, so it is safe to re-run). */
 function installTriggers() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('startPipeline').timeBased().everyHours(6).create();
   ScriptApp.newTrigger('startResearcher').timeBased().everyDays(1).atHour(7)
     .inTimezone('Asia/Kolkata').create();
-  console.log('Triggers installed: startPipeline every 6 h, startResearcher daily ~07:00 IST.');
+  ScriptApp.newTrigger('startDecider').timeBased().everyDays(1).atHour(18)
+    .inTimezone('Asia/Kolkata').create();
+  console.log('Triggers installed: startPipeline every 6 h, startResearcher ~07:00 IST, ' +
+              'startDecider ~18:00 IST.');
 }

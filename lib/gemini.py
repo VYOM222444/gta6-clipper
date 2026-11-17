@@ -222,10 +222,10 @@ class Gemini:
         body = {
             "contents": [{"role": "user", "parts": list(parts) + [{"text": prompt}]}],
             "generationConfig": {"responseMimeType": "application/json",
-                                 "responseSchema": schema, "temperature": temperature,
-                                 # fewer tokens per frame: faster answers, less quota
-                                 "mediaResolution": "MEDIA_RESOLUTION_LOW"},
+                                 "responseSchema": schema, "temperature": temperature},
         }
+        if parts:  # video input: fewer tokens per frame -> faster answers, less quota
+            body["generationConfig"]["mediaResolution"] = "MEDIA_RESOLUTION_LOW"
         last, busy = None, None
         for model in list(self.models):
             try:
