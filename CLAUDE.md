@@ -99,7 +99,7 @@ The **Playbook** (`playbook/PLAYBOOK.md` + `playbook/rules.json`) is read by eve
    Playbook rules. Analyze blind first (no view counts given to Gemini), then join with numbers.
    Also records titles, hashtags and description styles of winners → SEO rules.
    Labels a Short winner/average/low only after it is 3–7 days old.
-   *v0: the hand-written starter Playbook. Automated in Phase 4.*
+   *Built 2026-11-17 (`agents/researcher.py`, daily): collect -> analyze -> findings, see log.*
 2. **Scout** — finds trending GTA 6 long videos, live-stream VODs and Shorts via the YouTube
    Data API. Ranks by views/hour and outlier score (views ÷ channel subscribers). Checks the
    Creator Watchlist (`config/watchlist.json`) for new uploads. Works with the Researcher via
@@ -191,7 +191,9 @@ agents/log_posts.py         # posts/<date>.json -> Posted tab; YouTube stats of 
 posts/<date>.json           # links the owner posted, pushed on branch posts/<date>       [P]
 lib/keywords.py             # trending phrases from Scout titles -> Keywords tab (Scout run) [L]
 agents/gatekeeper.py
-agents/researcher.py
+agents/researcher.py        # daily: GTA 6 Shorts 3-14 d old -> Research tab; Flash-Lite blind tags; findings -> Playbook tab [R]
+data/gemini_usage_researcher.json # Researcher's own Gemini counter; committed by its workflow [R]
+.github/workflows/researcher.yml    # daily 01:23 UTC (06:53 IST) + manual                [R]
 lib/gemini.py               # Gemini generateContent + YouTube windows, daily counter, model fallback [B2]
 lib/render.py               # caption chunks, keyword highlight, .ass builder, ffmpeg command, post .txt [C]
 agents/render_batch.py      # Fetcher + Renderer: approved Batch rows -> Drive mp4 + txt  [C]
@@ -424,4 +426,22 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   videos, trend vs last run). Posted: views_6h/12h/48h added; checkpoints interpolated.
   `sheets.upsert_rows` now keeps columns a record doesn't mention (Scout no longer blanks
   Signals' columns, re-publishing a batch no longer blanks render columns).
+- 2026-11-17 (PR 2, Researcher): `agents/researcher.py` + daily workflow (06:53 IST).
+  collect: 6 queries x 2 orders (viewCount, relevance), Shorts (videoDuration=short, <= 180 s,
+  GTA 6 title) published 3-14 days ago (~1,200 units); score = log10 views + up to 0.5 for
+  views/subscribers; labels per day's cohort: winner top 15%, average 30-70th pct, low
+  bottom 30%, above = rest -> `Research` tab (new columns channel_title, subscribers,
+  published_at, collected_at, score, features, model, credits). analyze: up to 20 winners
+  + 20 average not yet tagged, youngest first; Gemini Flash-Lite (models
+  ["gemini-3.8-flash-lite", "gemini-flash-lite-latest"], 45/day, own counter
+  `data/gemini_usage_researcher.json`) tags BLIND: hook type, text in first second, payoff
+  second, title label, caption style/position/colour, layout, facecam, zooms, cuts, slow-mo,
+  freeze, replay, shake, SFX (riser/impact/whoosh/scratch/meme/ding), music, voiceover,
+  emoji, loop ending, pace, content type, topic, language. findings (last 7 days, >= 8
+  per group): winners vs average shares/medians, DO / AVOID when >= 15 points apart; SEO
+  (title length, emoji, question, caps, hashtag count, hashtags/phrases winners use more);
+  most-clipped creators (@handles in winners' descriptions -> watchlist ideas); today's
+  winning topics -> `Playbook` tab rows `research.<section>.<key>`. Claude reads them for
+  PLAYBOOK.md + the editing pack (PR 5). Not verified live yet: model name for Flash-Lite,
+  whether Flash-Lite accepts YouTube URLs. 122 tests.
 

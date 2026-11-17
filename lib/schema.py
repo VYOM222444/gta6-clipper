@@ -53,5 +53,7 @@ TABS = {
     "Research": [
         "research_id", "video_id", "url", "label", "views", "age_days", "hook_type",
         "length_s", "caption_style", "title", "hashtags", "notes", "analyzed_at",
+        "channel_title", "subscribers", "published_at", "collected_at", "score", "features",
+        "model", "credits",
     ],
 }

@@ -77,7 +77,8 @@ class YouTube:
     # --- endpoints -------------------------------------------------------------
 
     def search_video_ids(self, q, published_after, relevance_language=None,
-                         event_type=None, order="viewCount", max_results=50):
+                         event_type=None, order="viewCount", max_results=50,
+                         published_before=None, duration=None):
         params = {
             "part": "id",
             "type": "video",
@@ -90,6 +91,10 @@ class YouTube:
             params["relevanceLanguage"] = relevance_language
         if event_type:
             params["eventType"] = event_type
+        if published_before:
+            params["publishedBefore"] = published_before
+        if duration:
+            params["videoDuration"] = duration  # "short" = under 4 minutes
         data = self._call("search", params)
         return [it["id"]["videoId"] for it in data.get("items", []) if it.get("id", {}).get("videoId")]
 

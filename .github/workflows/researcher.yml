@@ -1,0 +1,51 @@
+name: Researcher
+
+# Once a day at 01:23 UTC (06:53 IST): study GTA 6 Shorts that are 3-14 days old, tag 20
+# winners + 20 average with Gemini Flash-Lite (blind), write winners-vs-average findings to
+# the Playbook tab. ~1,200 YouTube units, up to 45 Flash-Lite calls. Plus a manual button.
+# Saves data/gemini_usage_researcher.json (its own daily call counter) back to the repo.
+on:
+  schedule:
+    - cron: "23 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: researcher
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Study winning Shorts
+        env:
+          PYTHONUNBUFFERED: "1"
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m agents.researcher
+      - name: Save Gemini call counter
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/gemini_usage_researcher.json 2>/dev/null || exit 0
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "researcher: gemini usage $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push && exit 0
+            sleep 5
+          done
+          exit 1
