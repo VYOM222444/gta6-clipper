@@ -315,7 +315,8 @@ def main():
 
     try:
         gem = Gemini(wcfg["models"], wcfg["daily_budget"], "watcher",
-                     retry_wait=rules["watcher"].get("retry_wait_seconds", 20))
+                     retry_wait=rules["watcher"].get("retry_wait_seconds", 45),
+                     requests_per_minute=wcfg.get("requests_per_minute"))
     except GeminiError as e:
         print(f"WATCHER FAILED: {e}")
         return 1

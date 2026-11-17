@@ -2,16 +2,14 @@ name: Signals
 
 # GitHub part of Signals: timestamped comments only (YouTube blocks yt-dlp on GitHub).
 # Chat spikes + Most Replayed run in Colab: colab/signals.ipynb.
-# Four times a day at :11 (UTC 01:11, 07:11, 11:11, 19:11) so a skipped run is covered
-# by the next one; it only uses ~1 YouTube unit per video and skips videos already done.
-# plus a manual button: Actions > Signals > Run workflow.
+# Started by Tracker after every Tracker run (chain), plus a manual button. It only uses
+# ~1 YouTube unit per video. After every run it starts the Watcher.
 on:
-  schedule:
-    - cron: "11 1,7,11,19 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: signals
@@ -34,3 +32,8 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python -m agents.signals
+      - name: Start Watcher (chain; GitHub skips many cron runs)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/$GITHUB_REPOSITORY/actions/workflows/watcher.yml/dispatches" -f ref="$GITHUB_REF_NAME"

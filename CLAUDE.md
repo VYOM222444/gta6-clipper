@@ -203,10 +203,11 @@ colab/signals.ipynb         # morning Colab run: chat spikes + Most Replayed (yt
 data/snapshots.csv          # append-only; committed by the Tracker workflow              [A]
 data/gemini_usage.json      # Gemini calls per Pacific day; committed by the Watcher workflow [B2]
 .github/workflows/setup-sheet.yml   # manual "Setup sheet" button                         [S1]
-.github/workflows/scout.yml         # every 6h at :37 UTC + manual button                 [A]
-.github/workflows/tracker.yml       # 01/07/13/19:07 UTC + manual; commits snapshots.csv  [A]
-.github/workflows/signals.yml       # comments only, 01/07/11/19:11 UTC                   [B2]
-.github/workflows/watcher.yml       # after every Signals run + 04:47/12:47 UTC; commits usage [B2]
+.github/workflows/scout.yml         # scheduler + backup cron :37/6h + manual; guard; starts Tracker [A, Rel]
+.github/workflows/tracker.yml       # started by Scout + manual; commits snapshots.csv; starts Signals [A, Rel]
+.github/workflows/signals.yml       # comments only; started by Tracker + manual; starts Watcher [B2, Rel]
+.github/workflows/watcher.yml       # started by Signals + backup cron 12:47 UTC; guard; commits usage [B2, Rel]
+tools/apps_script_trigger.gs        # Google Apps Script: reliable 6-hourly / daily starts   [Rel]
 .github/workflows/publish-batch.yml # on push to batch/** branches                        [B2]
 .github/workflows/log-posts.yml     # on posts/** pushes (main or posts/** branches)      [P]
 .github/workflows/tests.yml         # runs pytest on every PR / push to main              [S1]
@@ -246,10 +247,26 @@ tests/                              # pytest; tests/fakes.py = in-memory sheet f
 
 ## 10. Daily schedule (IST) and the Decider procedure
 
-Automatic: Scout 06:07/12:07/18:07/00:07, Tracker 30 min later, Signals (comments) 06:41/
-12:41/16:41/00:41, Watcher right after each Signals run (+ backups 10:17/18:17); Gemini
-budget caps it at 15 calls/day. Owner: morning Colab `colab/signals.ipynb` (Run all, ~7 AM,
-optional), evening batch (~19:00+), Colab render (Chunk C).
+Automatic (since 2026-11-17 GitHub cron is only a backup; it skipped ~half the runs):
+- **Pipeline chain** every ~6 h: Scout -> (dispatches) Tracker -> Signals (comments) -> Watcher.
+  Started by the Apps Script scheduler (`tools/apps_script_trigger.gs`, every 6 h) and by
+  Scout's own backup cron (:37 every 6 h UTC). Guard job: a scheduled / scheduler start is
+  skipped if the main job really ran < 5 h ago (Watcher < 2 h, Researcher < 20 h). The
+  manual "Run workflow" button and chain starts always run.
+- Watcher backup cron 12:47 UTC (18:17 IST). Researcher daily ~07:00 IST (scheduler) +
+  backup cron 01:23 UTC. Gemini budget caps the Watcher at 15 calls/day.
+Owner: morning Colab `colab/signals.ipynb` (optional), evening batch (~19:00+), Colab render.
+
+**Reliable scheduler setup (once, on the laptop, ~10 min):**
+1. GitHub > Settings > Developer settings > Fine-grained tokens > Generate: name
+   `gta6-scheduler`, repository access "Only select" -> gta6-clipper, permissions:
+   **Actions: Read and write** (nothing else). Copy it (never paste it in chat).
+2. script.google.com > New project, name "GTA6 scheduler"; replace the code with
+   `tools/apps_script_trigger.gs` from the repo.
+3. Project Settings (gear) > Script properties > Add: `GH_TOKEN` = the token. Save.
+4. Back in the editor, choose `installTriggers` > Run > allow access (Google warns that the
+   app is unverified: Advanced > Go to project). Then run `startPipeline` once: the log
+   must say `scout.yml: HTTP 204 (started)`.
 
 **Decider procedure (Claude in chat, when the owner says "make today's batch"):**
 1. Read the sheet (Google Drive connector `read_file_content` on the sheet ID): `Moments`
@@ -444,4 +461,25 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   winning topics -> `Playbook` tab rows `research.<section>.<key>`. Claude reads them for
   PLAYBOOK.md + the editing pack (PR 5). Not verified live yet: model name for Flash-Lite,
   whether Flash-Lite accepts YouTube URLs. 122 tests.
+- 2026-11-17 (health check after merging PR 1 + 2): Researcher live run OK (433 Shorts found,
+  322 GTA 6 Shorts kept: 49 winner / 128 average; `gemini-flash-lite-latest` works with
+  YouTube URLs; `gemini-3.8-flash-lite` doesn't exist). Problems found: (1) Watcher produced
+  0 moments for 2 days: gemini-3.8-flash answered 503 "high demand" to almost every call,
+  each 503 + its retry was counted (15/15 used for nothing), and a per-minute 429 (free
+  tier: 5 requests/min for Flash) was treated as "daily budget used". (2) GitHub ran only
+  ~half the scheduled jobs in 48 h (Scout 4/8, Tracker 4/8, Signals 2/8), hours late.
+  (3) Researcher analysed winners first, so the budget ran out before enough average
+  Shorts were tagged (14 vs 5).
+- 2026-11-17 (PR 3, reliability): `lib/gemini.py`: a 503 moves the request to the next
+  model (Watcher models ["gemini-3.8-flash", "gemini-flash-lite-latest"]); if all are busy,
+  wait `retry_wait_seconds` (45) and go through the list once more; 503s, 404s and per-minute
+  429s are refunded (not counted); per-minute 429 waits Google's "retry in Xs" (<= 60 s) and
+  retries once; client-side pacing `requests_per_minute` (Watcher 5, Researcher 10) shared by
+  threads; daily 429 still stops (BudgetReached). Researcher: alternates winner/average,
+  budget 100/day, models ["gemini-flash-lite-latest"]. Workflows: chain Scout -> Tracker ->
+  Signals -> Watcher via workflow_dispatch from the previous job (GITHUB_TOKEN dispatch is
+  allowed to start workflows); cron kept only for Scout (backup), Watcher (12:47 UTC) and
+  Researcher; guard jobs; Apps Script scheduler. Actions minutes estimate: ~4 chains/day
+  (~8 min) + Watcher (~25 min/day) + Researcher (~12 min/day) ≈ 1,350 min/month; skipped
+  guard runs ~1 min each. 130 tests.
 

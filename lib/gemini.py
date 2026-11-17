@@ -5,11 +5,19 @@
 - Counts every request in data/gemini_usage.json against the daily budget from
   config/settings.json. Gemini's free quota resets at midnight Pacific time, so the
   counter uses the Pacific date. The workflow commits the file after each run.
-- Tries each model in the configured list; a 404 (unknown model name) moves to the next.
+- Tries each model in the configured list; a 404 (unknown model name) drops it for the run,
+  a 503 ("high demand") moves on to the next model for that request. If every model is
+  busy, waits `retry_wait` seconds and tries the list once more.
+- 503s and per-minute 429s were not served, so they are NOT counted against the daily
+  budget; a per-minute 429 waits the time Google asks for (<= 60 s) and retries once.
+  A daily 429 stops the run (BudgetReached).
+- Requests are paced to `requests_per_minute` (free tier: 5/min for Flash), shared by all
+  parallel threads.
 - The API key is never printed.
 """
 import json
 import os
+import re
 import socket
 import threading
 import time
@@ -41,6 +49,18 @@ class ModelNotFound(GeminiError):
 
 class Transient(GeminiError):
     """Server busy (500/503) or no answer in time: worth retrying later."""
+
+
+class Unavailable(Transient):
+    """5xx: the request was not served (not counted against the daily budget)."""
+
+
+class RateLimited(Transient):
+    """Per-minute limit (429): wait `wait` seconds and try again."""
+
+    def __init__(self, msg, wait=30.0):
+        super().__init__(msg)
+        self.wait = wait
 
 
 def quota_day(now=None):
@@ -91,14 +111,26 @@ def _http_post(url, body, api_key, timeout=420):
         if e.code == 404:
             raise ModelNotFound(msg) from None
         if e.code == 429:
+            if is_per_minute(msg):
+                raise RateLimited(f"per-minute limit: {msg[:160]}", retry_seconds(msg)) from None
             raise BudgetReached(f"Gemini quota exhausted: {msg}") from None
         if e.code in (500, 502, 503, 504):
-            raise Transient(msg) from None
+            raise Unavailable(msg) from None
         raise GeminiError(msg) from None
     except urllib.error.URLError as e:
         raise GeminiError(f"network error: {e.reason}") from None
     except (TimeoutError, socket.timeout):
         raise Transient(f"no answer within {timeout}s (video too long or Gemini busy)") from None
+
+
+def is_per_minute(msg):
+    m = msg.lower()
+    return "per minute" in m or "perminute" in m or "per_minute" in m
+
+
+def retry_seconds(msg, default=30.0):
+    m = re.search(r"retry in ([0-9.]+)s", msg)
+    return float(m.group(1)) if m else default
 
 
 def video_parts(url, windows=None):
@@ -130,7 +162,8 @@ def extract_json(resp):
 
 class Gemini:
     def __init__(self, models, daily_budget, bucket, api_key=None, usage=None,
-                 http_post=_http_post, retry_wait=20, sleep=time.sleep):
+                 http_post=_http_post, retry_wait=30, sleep=time.sleep,
+                 requests_per_minute=None, clock=time.monotonic):
         self.api_key = api_key if api_key is not None else os.environ.get(ENV_VAR, "")
         if not self.api_key:
             raise GeminiError(
@@ -145,30 +178,30 @@ class Gemini:
         self.calls_this_run = 0
         self.retry_wait = retry_wait
         self._sleep = sleep
+        self._clock = clock
         self._lock = threading.Lock()
+        self._pace_lock = threading.Lock()
+        self._interval = 60.0 / requests_per_minute if requests_per_minute else 0.0
+        self._next_ok = 0.0
 
     def remaining(self):
         return max(self.budget - self.usage.used(self.bucket), 0)
 
     def generate_json(self, parts, prompt, schema, temperature=0.4):
-        """One retry after a short wait if Gemini is busy (each attempt counts)."""
-        try:
-            return self._generate_once(parts, prompt, schema, temperature)
-        except Transient:
-            if self.retry_wait is None:
-                raise
-            self._sleep(self.retry_wait)
-            return self._generate_once(parts, prompt, schema, temperature)
+        """Answer from the first model that serves the request. If all are busy, wait
+        `retry_wait` s and go through the list once more (unless retry_wait is None)."""
+        rounds = 1 if self.retry_wait is None else 2
+        last = None
+        for r in range(rounds):
+            if r:
+                self._sleep(self.retry_wait)
+            try:
+                return self._try_models(parts, prompt, schema, temperature)
+            except Transient as e:
+                last = e
+        raise last
 
-    def _take_slot(self):
-        with self._lock:
-            if self.remaining() <= 0:
-                raise BudgetReached(
-                    f"daily Gemini budget used ({self.usage.used(self.bucket)}/{self.budget})")
-            self.usage.add(self.bucket)  # count before sending: failed calls can still count
-            self.calls_this_run += 1
-
-    def _generate_once(self, parts, prompt, schema, temperature):
+    def _try_models(self, parts, prompt, schema, temperature):
         body = {
             "contents": [{"role": "user", "parts": list(parts) + [{"text": prompt}]}],
             "generationConfig": {"responseMimeType": "application/json",
@@ -177,16 +210,59 @@ class Gemini:
                                  "mediaResolution": "MEDIA_RESOLUTION_LOW"},
         }
         last = None
-        while self.models:
-            model = self.models[0]
-            self._take_slot()
+        for model in list(self.models):
             try:
-                return extract_json(self._post(API.format(model=model), body, self.api_key)), model
+                return self._one(model, body), model
             except ModelNotFound as e:
                 last = e
                 print(f"note: model {model} not found, trying the next one")
                 with self._lock:
-                    if self.models and self.models[0] == model:
-                        self.models.pop(0)
+                    if model in self.models:
+                        self.models.remove(model)
+            except Transient as e:
+                last = e  # busy: try the next model for this request
+        if isinstance(last, Transient):
+            raise last
         raise GeminiError(f"no configured model worked ({last}). Update gemini models in "
                           "config/settings.json")
+
+    def _one(self, model, body):
+        for attempt in (0, 1):
+            self._pace()
+            self._take_slot()
+            try:
+                return extract_json(self._post(API.format(model=model), body, self.api_key))
+            except RateLimited as e:
+                self._refund()
+                if attempt:
+                    raise
+                self._sleep(min(e.wait, 60) + 1)
+            except Unavailable:
+                self._refund()
+                raise
+            except ModelNotFound:
+                self._refund()
+                raise
+
+    def _pace(self):
+        if not self._interval:
+            return
+        with self._pace_lock:
+            now = self._clock()
+            wait = self._next_ok - now
+            if wait > 0:
+                self._sleep(wait)
+            self._next_ok = max(now, self._next_ok) + self._interval
+
+    def _take_slot(self):
+        with self._lock:
+            if self.remaining() <= 0:
+                raise BudgetReached(
+                    f"daily Gemini budget used ({self.usage.used(self.bucket)}/{self.budget})")
+            self.usage.add(self.bucket)  # count before sending: a timeout may still count
+            self.calls_this_run += 1
+
+    def _refund(self):
+        with self._lock:
+            self.usage.add(self.bucket, -1)
+            self.calls_this_run -= 1

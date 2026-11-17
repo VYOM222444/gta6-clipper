@@ -54,9 +54,11 @@
       "moments_per_call": 5,
       "models": [
         "gemini-3.8-flash",
-        "gemini-flash-latest"
+        "gemini-flash-lite-latest"
       ],
-      "runs_per_day": 4
+      "runs_per_day": 4,
+      "requests_per_minute": 5,
+      "_fallback_note": "If Flash is busy (503) a request falls back to Flash-Lite instead of wasting the call."
     },
     "bulk": {
       "daily_request_cap": 500,
@@ -68,13 +70,13 @@
     },
     "researcher": {
       "models": [
-        "gemini-3.8-flash-lite",
         "gemini-flash-lite-latest"
       ],
-      "daily_budget": 45,
-      "parallel_calls": 4,
+      "daily_budget": 100,
+      "parallel_calls": 3,
       "max_run_minutes": 15,
-      "_note": "Flash-Lite has a much higher free limit than Flash (~500/day reported). Own counter: data/gemini_usage_researcher.json"
+      "_note": "Flash-Lite has a much higher free limit than Flash (~500/day reported). Own counter: data/gemini_usage_researcher.json",
+      "requests_per_minute": 10
     }
   },
   "schedules": {

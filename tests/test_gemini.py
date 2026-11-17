@@ -99,3 +99,68 @@ def test_busy_twice_raises(tmp_path):
                       retry_wait=0, sleep=lambda s: None)
     with pytest.raises(gemini.Transient):
         g.generate_json([], "p", {})
+
+
+def test_busy_model_falls_back_and_is_not_counted(tmp_path):
+    seen = []
+
+    def post(url, body, key):
+        seen.append(url)
+        if "flash:" in url:
+            raise gemini.Unavailable("503 UNAVAILABLE high demand")
+        return ok_answer({"ok": 2})
+    g = gemini.Gemini(["flash", "lite"], 5, "watcher", api_key="K", usage=usage(tmp_path), http_post=post)
+    answer, model = g.generate_json([], "p", {})
+    assert answer == {"ok": 2} and model == "lite"
+    assert g.usage.used("watcher") == 1 and g.calls_this_run == 1    # the 503 is refunded
+    assert g.models == ["flash", "lite"]                             # busy != removed
+
+
+def test_all_busy_waits_then_second_round(tmp_path):
+    n = []
+
+    def post(url, body, key):
+        n.append(1)
+        if len(n) <= 2:
+            raise gemini.Unavailable("503")
+        return ok_answer({"ok": 3})
+    waits = []
+    g = gemini.Gemini(["a", "b"], 5, "watcher", api_key="K", usage=usage(tmp_path), http_post=post,
+                      retry_wait=30, sleep=waits.append)
+    assert g.generate_json([], "p", {})[1] == "a"
+    assert waits == [30] and g.usage.used("watcher") == 1
+
+
+def test_per_minute_limit_waits_and_retries(tmp_path):
+    n = []
+
+    def post(url, body, key):
+        n.append(1)
+        if len(n) == 1:
+            raise gemini.RateLimited("per minute", 32.0)
+        return ok_answer({"ok": 4})
+    waits = []
+    g = gemini.Gemini(["a"], 5, "watcher", api_key="K", usage=usage(tmp_path), http_post=post, sleep=waits.append)
+    assert g.generate_json([], "p", {})[0] == {"ok": 4}
+    assert waits == [33.0] and g.usage.used("watcher") == 1
+
+
+def test_429_kinds():
+    msg = "Quota exceeded for metric: generate_content_free_tier_requests ... per minute limit ... Please retry in 32.04s."
+    assert gemini.is_per_minute(msg) and gemini.retry_seconds(msg) == 32.04
+    assert not gemini.is_per_minute("Quota exceeded: requests per day")
+
+
+def test_pacing_spaces_requests():
+    t = [0.0]
+    waits = []
+
+    def sleep(s):
+        waits.append(round(s, 1))
+        t[0] += s
+    g = gemini.Gemini(["a"], 9, "w", api_key="K", usage=gemini.Usage("/tmp/_pace_usage.json"),
+                      http_post=lambda *a: ok_answer({}), sleep=sleep, requests_per_minute=5,
+                      clock=lambda: t[0])
+    for _ in range(3):
+        g.generate_json([], "p", {})
+    assert waits == [12.0, 12.0]
