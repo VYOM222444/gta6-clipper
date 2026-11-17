@@ -4,6 +4,8 @@ Jobs, best first:
   1. videos with Signals windows (Moments rows source=signal, gate_status=pending):
      one Gemini call per video, up to `watcher.max_windows_per_call` windows
   2. long videos up to `watcher.whole_video_max_seconds` with no signals: watched whole
+Gemini busy (503/timeout): the video is retried once next run (status watch_retry), then
+it becomes watch_failed so it can't burn the daily budget.
 Each call returns moments (exact start/end, what happens, content type, quality 1-10,
 standalone?, promo?, hook idea). A basic gate marks each one ready or rejected_*.
 Output -> `Moments` (source=watcher). Signal rows become gate_status=watched and the
@@ -26,6 +28,7 @@ from lib.schema import TABS
 TAB = "Moments"
 CONTENT_TYPES = ["chaos", "reaction", "news", "secret", "tip"]
 SKIP_STATUS = {"blocked_leak", "blocked", "watched", "watch_failed"}
+NO_SIGNAL_JOBS = {"blocked_leak", "blocked", "watch_failed"}
 
 SCHEMA = {
     "type": "OBJECT",
@@ -80,7 +83,7 @@ def pick_jobs(candidates, moments, rules):
     jobs = []
     for vid, rows in by_video.items():
         c = cand.get(vid)
-        if not c or c.get("status") in {"blocked_leak", "blocked"} or not title_ok(c.get("title", ""), sc):
+        if not c or c.get("status") in NO_SIGNAL_JOBS or not title_ok(c.get("title", ""), sc):
             continue
         rows.sort(key=lambda r: _f(r.get("strength")), reverse=True)
         rows = rows[: w["max_windows_per_call"]]
@@ -107,6 +110,7 @@ def pick_jobs(candidates, moments, rules):
 
 def build_prompt(c, windows, rules):
     w, hook = rules["watcher"], rules["hook"]
+    lengths = ", ".join(f"{t} {lo}-{hi} s" for t, (lo, hi) in rules.get("clip_length_seconds", {}).items())
     if windows:
         segs = "\n".join(f"  segment {i}: {fmt_time(s)}-{fmt_time(e)} of the original video "
                          f"({int(e - s)} s long)" for i, (s, e) in enumerate(windows))
@@ -124,7 +128,7 @@ Video title: "{c.get('title', '')}" by {c.get('channel_title', '')}.
 Return up to 5 of the best clip-worthy moments, best first. A good moment:
 - stands on its own with no context from the rest of the video (`standalone`)
 - has its payoff (funny, shocking, impressive, hype) within the first {hook['payoff_by_second']} seconds of the clip
-- is {w['clip_min_seconds']}-{w['clip_max_seconds']} seconds long; start right before the action, end right after the payoff
+- has the right length for its content type ({lengths}); start right before the action, end right after the payoff (no dead air)
 - shows clear emotion: laughter, shock, rage, hype or "wow"
 Set `has_promo` true if the moment contains a sponsor read, ad, merch or channel promo.
 `quality` 1-10: how likely this is to go viral as a Short (be strict; 8+ only for genuinely great moments).
@@ -150,12 +154,24 @@ def to_absolute(m, windows):
     return ws + s, ws + e
 
 
-def fit_length(start, end, cfg):
+def clip_range(content_type, rules):
+    """(min, max) seconds for a content type; falls back to the general watcher limits."""
+    w = rules["watcher"]
+    r = rules.get("clip_length_seconds", {}).get(content_type)
+    return (r[0], r[1]) if r else (w["clip_min_seconds"], w["clip_max_seconds"])
+
+
+def fit_length(start, end, lo, hi, lead_max=3):
+    """Clamp a clip to [lo, hi] seconds. A too-short clip gets up to `lead_max` seconds of
+    lead-in before the action (never dead air at the end first), the rest after it."""
     start = max(start, 0)
-    if end - start > cfg["clip_max_seconds"]:
-        end = start + cfg["clip_max_seconds"]
-    if end - start < cfg["clip_min_seconds"]:
-        end = start + cfg["clip_min_seconds"]
+    if end - start > hi:
+        end = start + hi
+    short = lo - (end - start)
+    if short > 0:
+        before = min(short, lead_max, start)
+        start -= before
+        end += short - before
     return int(start), int(end)
 
 
@@ -193,7 +209,8 @@ def moments_from_answer(answer, job, used, block_ids, rules, now):
         span = to_absolute(m, windows)
         if not span:
             continue
-        start, end = fit_length(*span, cfg)
+        lo, hi = clip_range(m.get("content_type"), rules)
+        start, end = fit_length(*span, lo, hi, cfg.get("lead_in_max_seconds", 3))
         if start in seen:
             continue
         seen.add(start)
@@ -257,7 +274,12 @@ def run(gem, jobs, used, block_ids, rules, per_run_cap, now, max_minutes=None, c
                     notes.append(str(err))
                     stop = True
                 elif isinstance(err, Transient):
-                    notes.append(f"{vid}: {err} (will retry next run)")
+                    if c.get("status") == "watch_retry":  # busy twice in a row: give up
+                        notes.append(f"{vid}: {err} (second time, giving up)")
+                        watched_vid[vid] = "watch_failed"
+                    else:
+                        notes.append(f"{vid}: {err} (will retry next run)")
+                        watched_vid[vid] = "watch_retry"
                 else:
                     notes.append(f"{vid}: {err}")
                     watched_vid[vid] = "watch_failed"  # don't retry it every run

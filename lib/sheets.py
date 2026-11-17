@@ -163,7 +163,8 @@ def upsert_rows(ws, headers, key, records, preserve=()):
     """Insert or update rows keyed by column `key`. `records` are dicts.
 
     Existing rows are rewritten in place (no duplicates); for columns in `preserve`, a
-    non-empty value already in the sheet is kept (e.g. found_at, status).
+    non-empty value already in the sheet is kept (e.g. found_at, status). Columns a record
+    doesn't mention at all keep their old value (another agent may own them).
     Values are written RAW (a video id starting with "-" or "=" must never become a
     formula). Returns (updated_count, appended_count).
     """
@@ -181,7 +182,8 @@ def upsert_rows(ws, headers, key, records, preserve=()):
         if k in row_of:
             i, old_row = row_of[k]
             old = dict(zip(headers, old_row))
-            merged = dict(rec)
+            merged = {h: old.get(h, "") for h in headers if h not in rec}
+            merged.update(rec)
             for col in preserve:
                 if old.get(col, "") != "":
                     merged[col] = old[col]

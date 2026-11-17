@@ -17,7 +17,7 @@ import sys
 import unicodedata
 from datetime import datetime, timedelta, timezone
 
-from lib import sheets
+from lib import keywords, sheets
 from lib.config import load_blocklist, load_rules, load_settings, load_watchlist
 from lib.schema import TABS
 from lib.youtube import QuotaExceeded, YouTube, YouTubeError
@@ -230,6 +230,23 @@ def run(yt, settings, rules, watchlist, blocklist, now=None):
     return records, notes, len(ids)
 
 
+def update_keywords(ss, records, settings, now):
+    """Mine trending phrases from this run's titles -> Keywords tab (trend vs last run)."""
+    sheets.ensure_tab(ss, "Keywords", TABS["Keywords"])
+    ws = ss.worksheet("Keywords")
+    old = {r["phrase"]: r for r in sheets.read_records(ws)}
+    rows = keywords.mine([r for r in records if r.get("status") != "blocked_leak"],
+                         top=settings.get("keywords", {}).get("top", 40))
+    for r in rows:
+        prev = old.get(r["phrase"], {})
+        r["prev_score"] = prev.get("score", "")
+        r["trend"] = keywords.trend(r["score"], prev.get("score"))
+        r["first_seen"] = prev.get("first_seen") or iso(now)
+        r["updated_at"] = iso(now)
+    sheets.upsert_rows(ws, TABS["Keywords"], "phrase", rows, preserve=("first_seen",))
+    return rows
+
+
 def main():
     settings, rules = load_settings(), load_rules()
     try:
@@ -253,6 +270,13 @@ def main():
     except sheets.SheetSetupError as e:
         print(f"SCOUT FAILED (sheet): {e}")
         return 1
+
+    try:
+        kw = update_keywords(ss, records, settings, now=datetime.now(timezone.utc))
+        print(f"Keywords: top {len(kw)} phrases; rising: "
+              + (", ".join(r["phrase"] for r in kw if r["trend"] in ("rising", "new"))[:300] or "none"))
+    except sheets.SheetSetupError as e:
+        print(f"note: keywords not written: {e}")
 
     leads = sum(1 for r in keep if r["campaign_lead"])
     print(f"Candidates: {new} new, {upd} updated, {leads} campaign leads.")

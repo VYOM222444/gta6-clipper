@@ -31,14 +31,24 @@ def video(vid, views, published="2026-11-16T14:05:00Z"):
             "statistics": {"viewCount": str(views), "likeCount": "7", "commentCount": "2"}}
 
 
-def test_update_stats_freezes_24h_and_7d():
+def test_checkpoint_value_interpolates():
+    assert log_posts.checkpoint_value(6, 4, 100) is None                    # not reached
+    assert log_posts.checkpoint_value(6, 10, 1000, 4, 200) == 467
+    assert log_posts.checkpoint_value(24, 30, 3000) == 2400                 # from 0 at posting
+    assert log_posts.checkpoint_value(6, 30, 3000) is None                  # too far: blank
+
+
+def test_update_stats_checkpoints():
     row = {"views_24h": "", "views_7d": ""}
     u = log_posts.update_stats(row, video("x", 500, "2026-11-24T00:00:00Z"), NOW)   # 15 h old
     assert u["views_now"] == 500 and "views_24h" not in u
-    u = log_posts.update_stats(row, video("x", 900, "2026-11-23T00:00:00Z"), NOW)   # 39 h old
-    assert u["views_24h"] == 900 and "views_7d" not in u
-    u = log_posts.update_stats({"views_24h": "900", "views_7d": ""}, video("x", 4000), NOW)  # 8 days
-    assert "views_24h" not in u and u["views_7d"] == 4000 and u["likes_7d"] == 7
+    assert u["views_12h"] == 400 and "views_6h" not in u                     # 6 h: too far back
+    prev = {"stats_at": "2026-11-24T09:00:00Z", "views_now": "300"}          # read at 9 h
+    u = log_posts.update_stats(prev, video("x", 500, "2026-11-24T00:00:00Z"), NOW)
+    assert u["views_12h"] == 400 and "views_6h" not in u
+    u = log_posts.update_stats({"views_24h": "900", "views_7d": "", "views_48h": "1", "views_6h": "1",
+                                "views_12h": "1"}, video("x", 4000), NOW)  # 8 days, first reading
+    assert "views_24h" not in u and abs(u["views_7d"] - 4000 * 168 / 192.9) < 5 and u["likes_7d"] == 7
     assert u["posted_at"] == "2026-11-16T14:05:00Z"
 
 
@@ -50,7 +60,7 @@ def test_log_then_stats_end_to_end(tmp_path):
     yt = FakeYouTube(videos=[video("FvMOhbJz_IE", 1234)])
     assert log_posts.stats(ws, yt, NOW) == 1
     row = next(r for r in ws.get_all_records() if r["post_id"] == "2026-11-16-05-youtube")
-    assert row["views_now"] == 1234 and row["views_7d"] == 1234 and row["views_24h"] == 1234
+    assert row["views_now"] == 1234 and row["views_7d"] > 1000 and row["views_24h"] == ""
     # re-logging keeps the numbers
     log_posts.log(ws, [], [str(REPO_ROOT / "posts" / "2026-11-16.json")])
     row = next(r for r in ws.get_all_records() if r["post_id"] == "2026-11-16-05-youtube")

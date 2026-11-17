@@ -32,7 +32,16 @@
       "omg",
       "w",
       "wtf",
-      "bro"
+      "bro",
+      "haha",
+      "hahaha",
+      "😭",
+      "🔥",
+      "bhai",
+      "op",
+      "gg",
+      "insane",
+      "crazy"
     ],
     "loudness_spike_db": 8.0,
     "videos_per_run": 6,
@@ -58,7 +67,10 @@
     "comments_max": 100,
     "comments_min_mentions": 2,
     "comments_before_seconds": 15,
-    "comments_after_seconds": 25
+    "comments_after_seconds": 25,
+    "recheck_max_age_hours": 48,
+    "recheck_every_hours": 6,
+    "api_videos_per_run": 12
   },
   "clip_length_seconds": {
     "chaos": [
@@ -104,7 +116,8 @@
       "#GTA6Shorts",
       "#Shorts"
     ],
-    "disclaimer": "Fan channel. Not affiliated with Rockstar Games."
+    "disclaimer": "Fan channel. Not affiliated with Rockstar Games.",
+    "ig_first_line_max_chars": 125
   },
   "campaign_lead": {
     "keywords": [

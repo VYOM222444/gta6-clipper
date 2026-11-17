@@ -111,3 +111,12 @@ def test_load_audio_is_16k_mono_float(tmp_path):
                     "sine=frequency=440:duration=2", "-ac", "2", str(src)], check=True)
     a = render_batch.load_audio(src)
     assert a.dtype.name == "float32" and abs(len(a) - 32000) < 400 and 0 < abs(a).max() <= 1.0
+
+
+def test_hook_is_above_the_label_and_off_the_gameplay():
+    import re
+    ass = render.build_ass(TPL, [], "Cop car flip", "Cops are insane", "", 10.0)
+    hook_line = next(l for l in ass.splitlines() if "COPS ARE INSANE" in l)
+    hook_y = int(re.search(r"\\pos\(\d+,(\d+)\)", hook_line).group(1))
+    _, _, top = render.layout_boxes(1920, 1080, TPL)
+    assert hook_y < TPL["label"]["y"] < top

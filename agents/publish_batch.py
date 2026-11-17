@@ -7,14 +7,20 @@ known brand, moment exists and is `ready`, not already in Batch under another cl
 disclaimer in the description. Valid clips are upserted (approved / fetch_status /
 render_status already in the sheet are kept); their Moments rows become `in_batch`.
 
-The owner approves by typing "yes" in the `approved` column.
+New clips get approved=yes automatically when settings.batch.auto_approve is true (the
+owner glances at each clip while uploading; "no" in `approved` stops one). Otherwise the
+owner approves by typing "yes".
+
+`ig_caption` (Instagram has no title: the first line is all people see, and Instagram
+search reads it) is optional; if missing it is built from title + credit + hashtags.
 
 Batch file format:
 {"batch_id": "2026-11-20",
  "clips": [{"moment_id": "...", "brand": "wasted_again", "content_type": "chaos",
             "hook_text": "...", "title_label": "...", "title": "...",
             "description": "...", "hashtags": "#GTA6 #GTA6Shorts #Shorts ...",
-            "creator_credit": "@creator"}]}
+            "creator_credit": "@creator",
+            "ig_caption": "GTA 6 cop chase ends in chaos 😂\n🎥 @creator\n...\n#GTA6 ..."}]}
 
 Run:  python -m agents.publish_batch [batches/2026-11-20.json ...]   (default: all files)
 """
@@ -69,11 +75,29 @@ def validate(clip, moment, batch_rows, settings, rules, clip_id):
     credit = clip.get("creator_credit", "")
     if not credit or credit not in desc:
         p.append("creator_credit missing or not in the description")
+    ig = clip.get("ig_caption")
+    if ig is not None:
+        first = ig.strip().splitlines()[0] if ig.strip() else ""
+        if not first or len(first) > pk.get("ig_first_line_max_chars", 125):
+            p.append(f"ig_caption first line missing or longer than {pk.get('ig_first_line_max_chars', 125)} chars")
+        if credit and credit not in ig:
+            p.append("ig_caption must credit the creator")
+        if "#gta6" not in ig.lower():
+            p.append("ig_caption needs #GTA6")
+        if len(ig) > 2200:
+            p.append("ig_caption longer than 2200 characters (Instagram limit)")
     return p
+
+
+def default_ig_caption(clip, rules):
+    """Instagram caption when the Decider didn't write one: keywords in line 1."""
+    return (f"{clip['title']}\n🎥 Clip from {clip['creator_credit']}\n"
+            f"{rules['packaging']['disclaimer']}\n\n{clip['hashtags']}")
 
 
 def build_rows(batch, moments_by_id, batch_rows, settings, rules):
     good, bad = [], []
+    auto = "yes" if settings.get("batch", {}).get("auto_approve") else ""
     for i, clip in enumerate(batch.get("clips", []), start=1):
         clip_id = f"{batch['batch_id']}-{i:02d}"
         m = moments_by_id.get(str(clip.get("moment_id")))
@@ -89,7 +113,8 @@ def build_rows(batch, moments_by_id, batch_rows, settings, rules):
             "hook_text": clip["hook_text"], "title_label": clip["title_label"],
             "title": clip["title"], "description": clip["description"],
             "hashtags": clip["hashtags"], "creator_credit": clip["creator_credit"],
-            "approved": "", "fetch_status": "", "render_status": "",
+            "approved": auto, "fetch_status": "", "render_status": "",
+            "ig_caption": clip.get("ig_caption") or default_ig_caption(clip, rules),
         })
     return good, bad
 

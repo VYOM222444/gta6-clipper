@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "layout": "fit_blur",
   "fg_zoom": 1.25,
   "bg_blur": 24,
@@ -20,7 +20,9 @@
     "size": 108,
     "color": "FFFFFF",
     "outline": 7,
-    "seconds": 2.5
+    "seconds": 2.5,
+    "y": 250,
+    "y_vertical": 480
   },
   "caption": {
     "size": 104,

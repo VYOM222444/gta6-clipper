@@ -9,7 +9,10 @@ gate_status=pending); the candidate's status becomes signals_done / no_signals.
 
 Modes (env SIGNALS_MODE):
   api  - GitHub Actions (YouTube blocks yt-dlp there): comments only; candidate status
-         -> comments_done so the next run moves on to other videos.
+         -> comments_done. Timestamp comments pile up over hours, so videos younger than
+         `signals.recheck_max_age_hours` are checked again every `recheck_every_hours`
+         (time of the last check: Candidates.signals_at). New windows that overlap a
+         moment we already have are skipped, so the Watcher only sees new spots.
   full - Colab notebook (colab/signals.ipynb): yt-dlp chat + Most Replayed, plus comments
          if YOUTUBE_API_KEY is set. Status -> signals_done / no_signals.
 Set YTDLP_JS_RUNTIME (e.g. "node" in Colab) to pass --js-runtimes to yt-dlp.
@@ -34,7 +37,8 @@ from lib.youtube import QuotaExceeded, YouTube, YouTubeError
 
 TAB = "Moments"
 DONE_STATUS = {"signals_done", "no_signals", "blocked_leak", "blocked"}
-API_DONE_STATUS = DONE_STATUS | {"comments_done", "watched"}
+API_DONE_STATUS = DONE_STATUS | {"comments_done", "watched", "watch_failed"}
+RECHECK_STATUS = {"comments_done", "watched"}
 BLOCK_HINTS = ("sign in to confirm", "not a bot", "http error 429", "too many requests",
                "unable to download api page", "precondition check failed")
 TS_RE = re.compile(r"(?<![\d:])(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?![\d:])")
@@ -215,26 +219,60 @@ def _f(x, default=0.0):
         return default
 
 
-def pick_videos(candidates, tracker_rows, rules, mode="full"):
+def _time(s):
+    try:
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _hours_since(s, now):
+    t = _time(s)
+    return (now - t).total_seconds() / 3600 if t else None
+
+
+def due_for_recheck(c, cfg, now):
+    """api mode: a video already checked gets another comments pass while it is young."""
+    if c.get("status") not in RECHECK_STATUS:
+        return False
+    age = _hours_since(c.get("published_at"), now)
+    if age is None or age > cfg.get("recheck_max_age_hours", 0):
+        return False
+    since = _hours_since(c.get("signals_at"), now)
+    return since is None or since >= cfg.get("recheck_every_hours", 6) - 0.5
+
+
+def pick_videos(candidates, tracker_rows, rules, mode="full", now=None):
     sig, sc = rules["signals"], rules["scout"]
+    now = now or datetime.now(timezone.utc)
     labels = {r["video_id"]: r.get("label", "") for r in tracker_rows}
-    seen, out = set(), []
+    limit = sig.get("api_videos_per_run", sig["videos_per_run"]) if mode == "api" else sig["videos_per_run"]
+    done = API_DONE_STATUS if mode == "api" else DONE_STATUS
+    seen, fresh, again = set(), [], []
     for c in sorted(candidates, key=lambda c: _f(c.get("score")), reverse=True):
         vid = str(c.get("video_id", ""))
         if not vid or vid in seen:
             continue
         seen.add(vid)
-        done = API_DONE_STATUS if mode == "api" else DONE_STATUS
-        if c.get("status") in done or c.get("kind") not in sig["kinds"]:
+        if c.get("kind") not in sig["kinds"]:
             continue
         if _f(c.get("duration_s")) < sig["min_duration_s"] and c.get("kind") != "live_vod":
             continue
         if labels.get(vid) in sig["skip_labels"] or not title_ok(c.get("title", ""), sc):
             continue
-        out.append(c)
-        if len(out) >= sig["videos_per_run"]:
-            break
-    return out
+        if c.get("status") not in done:
+            fresh.append(c)
+        elif mode == "api" and due_for_recheck(c, sig, now):
+            again.append(c)
+    return (fresh + again)[:limit]
+
+
+def drop_known(video_id, merged, moments, pad=10):
+    """Skip windows that overlap a moment we already have for this video (any source)."""
+    spans = [(_f(m.get("start_s")), _f(m.get("end_s"))) for m in moments
+             if str(m.get("video_id")) == video_id]
+    return [w for w in merged
+            if not any(s - pad <= w["start"] <= e and w["end"] >= s - pad for s, e in spans)]
 
 
 # --- yt-dlp ---------------------------------------------------------------------------------
@@ -291,14 +329,16 @@ def main():
         client = sheets.get_client()
         ss = sheets.open_sheet(client, settings["sheet"]["id"])
         sheets.ensure_tab(ss, TAB, TABS[TAB])
+        sheets.ensure_tab(ss, "Candidates", TABS["Candidates"])
         cand_ws, mom_ws = ss.worksheet("Candidates"), ss.worksheet(TAB)
         candidates = sheets.read_records(cand_ws)
+        known = sheets.read_records(mom_ws)
         tracker_rows = sheets.read_records(ss.worksheet("Tracker"))
     except sheets.SheetSetupError as e:
         print(f"SIGNALS FAILED (sheet): {e}")
         return 1
 
-    todo = pick_videos(candidates, tracker_rows, rules, mode)
+    todo = pick_videos(candidates, tracker_rows, rules, mode, now)
     try:
         yt = YouTube(budget_units=settings["youtube"]["signals_run_budget_units"])
     except YouTubeError:
@@ -325,22 +365,26 @@ def main():
                     print(f"note: {e}")
                 except YouTubeError as e:
                     print(f"note: comments for {vid} failed: {e}")
-            merged = analyse(c, info, chat, comments, cfg)
+            merged = drop_known(vid, analyse(c, info, chat, comments, cfg), known)
             rows = to_moments(vid, merged, now)
             all_moments.extend(rows)
+            upd = {"signals_at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
             if mode == "api":
-                status[vid] = "comments_done"
+                if c.get("status") not in RECHECK_STATUS:
+                    upd["status"] = "comments_done"
             elif info is not None:
-                status[vid] = "signals_done" if rows else "no_signals"
+                upd["status"] = "signals_done" if rows else "no_signals"
+            status[vid] = upd
             heat = len((info or {}).get("heatmap") or [])
-            print(f"  {vid} | {c.get('kind'):<8} | chat msgs {len(chat):>6} | heatmap {heat:>3} | "
+            again = " (re-check)" if c.get("status") in RECHECK_STATUS else ""
+            print(f"  {vid}{again} | {c.get('kind'):<8} | chat msgs {len(chat):>6} | heatmap {heat:>3} | "
                   f"comments {len(comments):>3} | windows {len(rows)} | {c.get('title', '')[:45]}"
                   + (f" | yt-dlp: {err[:80]}" if err else ""))
 
     upd, new = sheets.upsert_rows(mom_ws, TABS[TAB], "moment_id", all_moments,
                                   preserve=("gate_status", "created_at"))
     if status:
-        sheets.set_column(cand_ws, TABS["Candidates"], "video_id", "status", status)
+        sheets.set_values(cand_ws, TABS["Candidates"], "video_id", status)
     print(f"Moments: {new} new, {upd} updated."
           + (f" Quota used: {yt.used}/{yt.budget} units." if yt else ""))
     if mode != "api" and todo and blocked == len(todo):

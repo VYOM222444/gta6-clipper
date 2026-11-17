@@ -155,3 +155,26 @@ def test_set_values_many_columns_one_write():
     rows = ws.get_all_records()
     assert n == 2 and rows[0]["render_status"] == "done" and rows[0]["output_path"] == "/x.mp4"
     assert rows[0]["approved"] == "yes" and rows[1]["render_status"] == ""
+
+
+def test_api_mode_rechecks_young_videos_after_new_ones():
+    def c(vid, status, age_h, checked_h=None, score="5"):
+        return {"video_id": vid, "kind": "long", "duration_s": "3600", "score": score,
+                "title": "GTA 6 chaos stream", "status": status,
+                "published_at": (NOW - __import__("datetime").timedelta(hours=age_h)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "signals_at": "" if checked_h is None else
+                (NOW - __import__("datetime").timedelta(hours=checked_h)).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    cands = [c("old", "comments_done", 60, 10, score="99"),     # too old: no re-check
+             c("recent", "watched", 20, 2, score="98"),          # checked 2 h ago: wait
+             c("due", "watched", 20, 7, score="97"),             # due again
+             c("new", "new", 3, score="1")]                      # never checked: first
+    got = [x["video_id"] for x in signals.pick_videos(cands, [], RULES, "api", NOW)]
+    assert got == ["new", "due"]
+    full = [x["video_id"] for x in signals.pick_videos(cands, [], RULES, "full", NOW)]
+    assert "due" in full and "new" in full
+
+
+def test_drop_known_windows():
+    merged = [{"start": 100, "end": 140}, {"start": 400, "end": 440}]
+    known = [{"video_id": "v", "start_s": "95", "end_s": "150"}, {"video_id": "x", "start_s": "400", "end_s": "450"}]
+    assert signals.drop_known("v", merged, known) == [{"start": 400, "end": 440}]
