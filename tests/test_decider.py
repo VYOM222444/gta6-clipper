@@ -17,11 +17,11 @@ def mom(mid, vid, quality=8, ct="chaos", hours_ago=3, status="ready", channel="C
 
 
 def test_ramp_by_date():
-    assert decider.clips_per_brand(S, "2026-11-17") == S["batch"]["clips_per_brand"]
-    assert decider.clips_per_brand(S, "2026-11-18") == 1
-    assert decider.clips_per_brand(S, "2026-11-19") == 1
-    assert decider.clips_per_brand(S, "2026-11-22") == 3
-    assert decider.clips_per_brand(S, "2026-12-01") == 5
+    assert decider.clips_per_brand(S, "2026-11-18") == 5
+    s = {**S, "batch": {**S["batch"], "clips_per_brand_by_date": {"2026-11-21": 3, "2026-11-25": 4}}}
+    assert decider.clips_per_brand(s, "2026-11-18") == 5       # before the first date: default
+    assert decider.clips_per_brand(s, "2026-11-22") == 3
+    assert decider.clips_per_brand(s, "2026-12-01") == 4
 
 
 def test_score_uses_label_age_and_saturation():
