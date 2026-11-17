@@ -208,12 +208,16 @@ def collect(yt, settings, rules, now):
 # --- 2. analyze --------------------------------------------------------------------------------
 
 def pick_to_analyze(rows, per_label):
-    """Not-yet-analysed winners and average Shorts, youngest first (just settled)."""
-    out = []
+    """Not-yet-analysed winners and average Shorts, youngest first (just settled),
+    alternating winner / average so both groups fill up even if the budget runs out."""
+    groups = []
     for label in ("winner", "average"):
         todo = [r for r in rows if r.get("label") == label and not str(r.get("features", "")).strip()]
         todo.sort(key=lambda r: _f(r.get("age_days"), 99))
-        out += todo[:per_label]
+        groups.append(todo[:per_label])
+    out = []
+    for i in range(max(len(g) for g in groups)):
+        out += [g[i] for g in groups if i < len(g)]
     return out
 
 
@@ -461,8 +465,9 @@ def main(argv=None):
     if what in ("analyze", "all"):
         gcfg = settings["gemini"]["researcher"]
         try:
-            gem = Gemini(gcfg["models"], gcfg["daily_budget"], "researcher",
-                         usage=Usage(USAGE_FILE), retry_wait=rules["watcher"].get("retry_wait_seconds", 20))
+            gem = Gemini(gcfg["models"], gcfg["daily_budget"], "researcher", usage=Usage(USAGE_FILE),
+                         retry_wait=rules["watcher"].get("retry_wait_seconds", 45),
+                         requests_per_minute=gcfg.get("requests_per_minute"))
         except GeminiError as e:
             print(f"RESEARCHER FAILED: {e}")
             return 1

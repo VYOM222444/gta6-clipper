@@ -209,6 +209,6 @@
     "overlap_seconds": 20,
     "max_run_minutes": 22,
     "parallel_calls": 4,
-    "retry_wait_seconds": 20
+    "retry_wait_seconds": 45
   }
 }

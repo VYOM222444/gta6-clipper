@@ -2,22 +2,59 @@ name: Researcher
 
 # Once a day at 01:23 UTC (06:53 IST): study GTA 6 Shorts that are 3-14 days old, tag 20
 # winners + 20 average with Gemini Flash-Lite (blind), write winners-vs-average findings to
-# the Playbook tab. ~1,200 YouTube units, up to 45 Flash-Lite calls. Plus a manual button.
+# the Playbook tab. Also started by the external scheduler; a guard skips the run if it
+# really ran < 20 h ago. ~1,200 YouTube units, up to 45 Flash-Lite calls. Plus a manual button.
 # Saves data/gemini_usage_researcher.json (its own daily call counter) back to the repo.
 on:
   schedule:
     - cron: "23 1 * * *"
   workflow_dispatch:
+    inputs:
+      from_trigger:
+        description: "Set by the external scheduler: skip if it ran recently"
+        required: false
+        default: ""
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: researcher
   cancel-in-progress: false
 
 jobs:
+  guard:
+    # Skip a scheduled / external-trigger run if research really ran < 20 h ago (overlapping
+    # triggers). Manual button and chain starts always run.
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -z "${{ inputs.from_trigger }}" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          last=""
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/researcher.yml/runs?status=success&per_page=8" -q '.workflow_runs[].id'); do
+            last=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs" -q '.jobs[] | select(.name=="research" and .conclusion=="success") | .started_at')
+            [ -n "$last" ] && break
+          done
+          if [ -n "$last" ] && [ $(( $(date +%s) - $(date -d "$last" +%s) )) -lt $(( 20 * 3600 )) ]; then
+            echo "Last real run started $last (< 20 h ago): skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Last real run: ${last:-never}. Running."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
   research:
+    needs: guard
+    if: needs.guard.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

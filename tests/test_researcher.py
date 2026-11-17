@@ -115,7 +115,7 @@ def test_pick_and_analyze_blind():
         {"research_id": "x", "label": "low", "url": "u4", "age_days": "5", "features": ""},
         {"research_id": "done", "label": "winner", "url": "u5", "age_days": "3", "features": "{}x"}]
     todo = researcher.pick_to_analyze(rows, 5)
-    assert [r["research_id"] for r in todo] == ["w2", "w1", "a1"]
+    assert [r["research_id"] for r in todo] == ["w2", "a1", "w1"]
 
     class Gem:
         calls_this_run = 0
