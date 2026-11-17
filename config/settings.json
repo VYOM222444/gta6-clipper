@@ -44,7 +44,8 @@
     "scout_run_budget_units": 1200,
     "tracker_run_budget_units": 200,
     "_quota_note": "Scout: 7 searches x 100 + ~20 list calls per run, 4 runs/day = ~2,900 units. Tracker: ~1 unit per 50 videos per run.",
-    "signals_run_budget_units": 50
+    "signals_run_budget_units": 50,
+    "gatekeeper_run_budget_units": 700
   },
   "gemini": {
     "_note": "Free tier caps are small and change often (Nov 2026: Flash ~20 requests/day, Flash-Lite more; max 8 h of YouTube video/day). Check AI Studio and edit here; code never assumes. Models are tried in order; an unknown name falls through to the next.",
@@ -58,7 +59,12 @@
       ],
       "runs_per_day": 4,
       "requests_per_minute": 5,
-      "_fallback_note": "If Flash is busy (503) a request falls back to Flash-Lite instead of wasting the call."
+      "_fallback_note": "If Flash is busy (503) a request falls back to Flash-Lite instead of wasting the call.",
+      "model_budgets": {
+        "gemini-flash-lite-latest": 30
+      },
+      "max_calls_per_run": 8,
+      "_budget_note": "daily_budget = Flash calls (15). Flash-Lite fallback has its own 30/day (model_budgets). Runs use at most max_calls_per_run to stay inside free GitHub minutes."
     },
     "bulk": {
       "daily_request_cap": 500,

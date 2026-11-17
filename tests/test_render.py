@@ -120,3 +120,12 @@ def test_hook_is_above_the_label_and_off_the_gameplay():
     hook_y = int(re.search(r"\\pos\(\d+,(\d+)\)", hook_line).group(1))
     _, _, top = render.layout_boxes(1920, 1080, TPL)
     assert hook_y < TPL["label"]["y"] < top
+
+
+def test_mask_words():
+    words = [{"word": "what", "start": 0, "end": 1}, {"word": "Fucking", "start": 1, "end": 2},
+             {"word": "shit!", "start": 2, "end": 3}, {"word": "dickens", "start": 3, "end": 4},
+             {"word": "chutiya", "start": 4, "end": 5}]
+    out = [w["word"] for w in render.mask_words(words, ["fuck*", "shit", "dick", "chutiya"])]
+    assert out == ["what", "F******", "s***", "dickens", "c******"]
+    assert render.mask_words(words, [])[1]["word"] == "Fucking"

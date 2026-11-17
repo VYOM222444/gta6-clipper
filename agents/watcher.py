@@ -316,14 +316,16 @@ def main():
     try:
         gem = Gemini(wcfg["models"], wcfg["daily_budget"], "watcher",
                      retry_wait=rules["watcher"].get("retry_wait_seconds", 45),
-                     requests_per_minute=wcfg.get("requests_per_minute"))
+                     requests_per_minute=wcfg.get("requests_per_minute"),
+                     model_budgets=wcfg.get("model_budgets"))
     except GeminiError as e:
         print(f"WATCHER FAILED: {e}")
         return 1
-    per_run = math.ceil(wcfg["daily_budget"] / wcfg.get("runs_per_day", 1))
+    total = wcfg["daily_budget"] + sum((wcfg.get("model_budgets") or {}).values())
+    per_run = min(math.ceil(total / wcfg.get("runs_per_day", 1)), wcfg.get("max_calls_per_run", 99))
     jobs = pick_jobs(candidates, moments, rules)
     block_ids = {b if isinstance(b, str) else b.get("channel_id") for b in load_blocklist().get("channels", [])}
-    print(f"{len(jobs)} videos waiting; Gemini calls left today: {gem.remaining()}/{gem.budget} "
+    print(f"{len(jobs)} videos waiting; Gemini calls left today: {gem.remaining()} "
           f"(this run max {per_run}).")
     rows, watched_sig, watched_vid, notes = run(
         gem, jobs, used_spans(batch, posted, moments), block_ids, rules, per_run, now,
@@ -339,7 +341,7 @@ def main():
         sheets.set_column(cand_ws, TABS["Candidates"], "video_id", "status", watched_vid)
     ready = sum(1 for r in rows if r["gate_status"] == "ready")
     print(f"Moments: {new} new ({ready} ready), {upd} updated. Gemini calls this run: "
-          f"{gem.calls_this_run}; used today: {gem.usage.used('watcher')}/{gem.budget}.")
+          f"{gem.calls_this_run}; left today: {gem.remaining()} (Flash {gem.remaining(wcfg['models'][0])}).")
     return 0
 
 

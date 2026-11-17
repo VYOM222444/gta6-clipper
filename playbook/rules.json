@@ -210,5 +210,60 @@
     "max_run_minutes": 22,
     "parallel_calls": 4,
     "retry_wait_seconds": 45
+  },
+  "gatekeeper": {
+    "leak_words": [
+      "leak",
+      "leaked",
+      "leaks",
+      "pre-release",
+      "prerelease",
+      "dev build",
+      "beta build",
+      "datamine",
+      "datamined"
+    ],
+    "overlap_seconds": 20,
+    "duplicate_overlap": 0.5,
+    "saturation": {
+      "checks_per_run": 6,
+      "recheck_hours": 12,
+      "max_results": 25,
+      "min_keyword_overlap": 2,
+      "min_views": 20000
+    }
+  },
+  "captions": {
+    "_note": "Words masked in burned-in captions (first letter kept). 'word*' also matches longer words (fucking).",
+    "mask_words": [
+      "fuck*",
+      "motherfuck*",
+      "shit",
+      "shitty",
+      "bullshit",
+      "bitch",
+      "bitches",
+      "cunt",
+      "nigga",
+      "niggas",
+      "nigger",
+      "faggot",
+      "fag",
+      "retard",
+      "retarded",
+      "whore",
+      "slut",
+      "pussy",
+      "dick",
+      "madarchod",
+      "bhenchod",
+      "behenchod",
+      "chutiya",
+      "chutiye",
+      "gandu",
+      "bsdk",
+      "randi",
+      "bhosdike"
+    ]
   }
 }

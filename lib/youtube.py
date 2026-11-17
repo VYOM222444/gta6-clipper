@@ -98,6 +98,22 @@ class YouTube:
         data = self._call("search", params)
         return [it["id"]["videoId"] for it in data.get("items", []) if it.get("id", {}).get("videoId")]
 
+    def search_snippets(self, q, published_after, duration="short", order="viewCount", max_results=25):
+        """Search with titles/descriptions in one call (same 100 units as an id search)."""
+        data = self._call("search", {
+            "part": "snippet", "type": "video", "q": q, "order": order,
+            "publishedAfter": published_after, "maxResults": max_results,
+            **({"videoDuration": duration} if duration else {}),
+        })
+        out = []
+        for it in data.get("items", []):
+            vid = it.get("id", {}).get("videoId")
+            if vid:
+                sn = it.get("snippet", {})
+                out.append({"id": vid, "title": sn.get("title", ""), "description": sn.get("description", ""),
+                            "channelId": sn.get("channelId", ""), "publishedAt": sn.get("publishedAt", "")})
+        return out
+
     def videos(self, ids, parts="snippet,statistics,contentDetails,liveStreamingDetails"):
         out = []
         for batch in chunks(dict.fromkeys(ids)):

@@ -151,16 +151,32 @@ def test_429_kinds():
     assert not gemini.is_per_minute("Quota exceeded: requests per day")
 
 
-def test_pacing_spaces_requests():
+def test_pacing_spaces_requests(tmp_path):
     t = [0.0]
     waits = []
 
     def sleep(s):
         waits.append(round(s, 1))
         t[0] += s
-    g = gemini.Gemini(["a"], 9, "w", api_key="K", usage=gemini.Usage("/tmp/_pace_usage.json"),
+    g = gemini.Gemini(["a"], 9, "w", api_key="K", usage=usage(tmp_path),
                       http_post=lambda *a: ok_answer({}), sleep=sleep, requests_per_minute=5,
                       clock=lambda: t[0])
     for _ in range(3):
         g.generate_json([], "p", {})
     assert waits == [12.0, 12.0]
+
+
+def test_fallback_model_has_its_own_budget(tmp_path):
+    def post(url, body, key):
+        if "flash:" in url:
+            raise gemini.Unavailable("503")
+        return ok_answer({"ok": 1})
+    g = gemini.Gemini(["flash", "lite"], 2, "watcher", api_key="K", usage=usage(tmp_path), http_post=post,
+                      model_budgets={"lite": 3}, retry_wait=None)
+    assert g.remaining() == 5
+    for _ in range(3):
+        assert g.generate_json([], "p", {})[1] == "lite"
+    assert g.usage.used("watcher") == 0 and g.usage.used("watcher:lite") == 3
+    assert g.remaining() == 2 and g.remaining("lite") == 0
+    with pytest.raises(gemini.Unavailable):     # lite budget used, flash busy
+        g.generate_json([], "p", {})

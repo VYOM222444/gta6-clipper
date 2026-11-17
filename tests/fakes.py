@@ -66,6 +66,7 @@ class FakeYouTube:
         self._channels = {c["id"]: c for c in (channels or [])}
         self.uploads = uploads or {}      # channel_id -> [video ids]
         self.used, self.budget = 0, 10_000
+        self.snippet_results = {}         # q -> [snippet dicts]
         self.calls = []
 
     def search_video_ids(self, q, published_after, relevance_language=None,
@@ -73,6 +74,11 @@ class FakeYouTube:
         self.used += 100
         self.calls.append(("search", q, relevance_language, event_type))
         return list(self.search.get((q, event_type), self.search.get(q, [])))
+
+    def search_snippets(self, q, published_after, **kw):
+        self.used += 100
+        self.calls.append(("snippets", q))
+        return list(self.snippet_results.get(q, []))
 
     def videos(self, ids, parts=None):
         self.used += 1
