@@ -268,7 +268,7 @@ Automatic (since 2026-11-17 GitHub cron is only a backup; it skipped ~half the r
   backup cron 01:23 UTC. Gemini: Watcher 15 Flash calls/day + 30 Flash-Lite fallback calls/day
   (own counter `watcher:gemini-flash-lite-latest`), max 8 calls per run.
 - Decider (today's batch) ~18:00 IST (scheduler `startDecider`) + backup cron 12:53 UTC.
-  Launch ramp (`batch.clips_per_brand_by_date`): 1 clip/brand from Nov 19, 3 from Nov 21,
+  Launch ramp (`batch.clips_per_brand_by_date`): 1 clip/brand from Nov 18, 3 from Nov 21,
   5 from Nov 23.
 Owner: evening Colab render (~19:00+) + YouTube uploads; morning Colab signals (optional).
 

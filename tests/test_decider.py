@@ -17,7 +17,8 @@ def mom(mid, vid, quality=8, ct="chaos", hours_ago=3, status="ready", channel="C
 
 
 def test_ramp_by_date():
-    assert decider.clips_per_brand(S, "2026-11-18") == S["batch"]["clips_per_brand"]
+    assert decider.clips_per_brand(S, "2026-11-17") == S["batch"]["clips_per_brand"]
+    assert decider.clips_per_brand(S, "2026-11-18") == 1
     assert decider.clips_per_brand(S, "2026-11-19") == 1
     assert decider.clips_per_brand(S, "2026-11-22") == 3
     assert decider.clips_per_brand(S, "2026-12-01") == 5
