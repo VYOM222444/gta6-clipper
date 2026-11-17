@@ -11,7 +11,7 @@ TABS = {
         "video_id", "url", "title", "channel_id", "channel_title", "published_at",
         "kind", "duration_s", "views", "subscribers", "age_h", "views_per_hour",
         "outlier_score", "is_watchlist", "campaign_lead", "campaign_link",
-        "found_at", "status", "score", "found_by", "updated_at", "signals_at",
+        "found_at", "status", "score", "found_by", "updated_at", "signals_at", "sat_checked_at", "sat_shorts",
     ],
     # Tracker summary: one row per tracked video, latest numbers.
     "Tracker": [
@@ -24,7 +24,7 @@ TABS = {
         "moment_id", "video_id", "start_s", "end_s", "source", "signal", "strength",
         "reason", "content_type", "style_tags", "suggested_brand", "has_promo",
         "gate_status", "created_at", "quality", "standalone", "hook_idea", "title",
-        "channel_title", "url", "watched_at",
+        "channel_title", "url", "watched_at", "saturation", "gate_note",
     ],
     # Human-readable view of the active Playbook rules.
     "Playbook": [

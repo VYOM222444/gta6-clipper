@@ -132,9 +132,12 @@ The **Playbook** (`playbook/PLAYBOOK.md` + `playbook/rules.json`) is read by eve
    moments: `{start, end, reason, content_type, style_tags, suggested_brand, has_promo}`,
    3–5 per call. Supports prompt-to-clip ("every police chase"). Skips sponsor/promo
    segments. Output → `Moments`.
-6. **Gatekeeper** — blocks: leaked footage, creators on the blocklist
-   (`config/blocklist.json`), moments already used (`Posted` tab), promo segments,
-   duplicates across brands.
+6. **Gatekeeper** (`agents/gatekeeper.py`, after every Watcher run) — re-checks `ready`
+   moments: rejected_leak (leak / pre-release words), rejected_blocklist (channel id or
+   name in `config/blocklist.json`), rejected_used (Batch/Posted), rejected_duplicate
+   (overlapping weaker moment of the same video), rejected_saturated (other Shorts that
+   reference the source and share >= 2 keywords with the moment already have >= 20k views).
+   Notes in Moments `saturation` / `gate_note`. Promo is gated by the Watcher.
 7. **Decider (Claude in chat)** — scores approved moments, assigns each to one brand, writes
    hook text, top title label, title, description and hashtags. Output → `Batch` tab, which
    the Fetcher reads.
@@ -190,7 +193,8 @@ batches/<date>.json         # Decider output, pushed on branch batch/<date>     
 agents/log_posts.py         # posts/<date>.json -> Posted tab; YouTube stats of our posts  [P]
 posts/<date>.json           # links the owner posted, pushed on branch posts/<date>       [P]
 lib/keywords.py             # trending phrases from Scout titles -> Keywords tab (Scout run) [L]
-agents/gatekeeper.py
+agents/gatekeeper.py        # leaks, blocklist, used, duplicates, saturation -> Moments gate_status [G]
+.github/workflows/gatekeeper.yml    # started by the Watcher (chain) + manual             [G]
 agents/researcher.py        # daily: GTA 6 Shorts 3-14 d old -> Research tab; Flash-Lite blind tags; findings -> Playbook tab [R]
 data/gemini_usage_researcher.json # Researcher's own Gemini counter; committed by its workflow [R]
 .github/workflows/researcher.yml    # daily 01:23 UTC (06:53 IST) + manual                [R]
@@ -248,13 +252,15 @@ tests/                              # pytest; tests/fakes.py = in-memory sheet f
 ## 10. Daily schedule (IST) and the Decider procedure
 
 Automatic (since 2026-11-17 GitHub cron is only a backup; it skipped ~half the runs):
-- **Pipeline chain** every ~6 h: Scout -> (dispatches) Tracker -> Signals (comments) -> Watcher.
+- **Pipeline chain** every ~6 h: Scout -> (dispatches) Tracker -> Signals (comments) ->
+  Watcher -> Gatekeeper.
   Started by the Apps Script scheduler (`tools/apps_script_trigger.gs`, every 6 h) and by
   Scout's own backup cron (:37 every 6 h UTC). Guard job: a scheduled / scheduler start is
   skipped if the main job really ran < 5 h ago (Watcher < 2 h, Researcher < 20 h). The
   manual "Run workflow" button and chain starts always run.
 - Watcher backup cron 12:47 UTC (18:17 IST). Researcher daily ~07:00 IST (scheduler) +
-  backup cron 01:23 UTC. Gemini budget caps the Watcher at 15 calls/day.
+  backup cron 01:23 UTC. Gemini: Watcher 15 Flash calls/day + 30 Flash-Lite fallback calls/day
+  (own counter `watcher:gemini-flash-lite-latest`), max 8 calls per run.
 Owner: morning Colab `colab/signals.ipynb` (optional), evening batch (~19:00+), Colab render.
 
 **Reliable scheduler setup (once, on the laptop, ~10 min):**
@@ -482,4 +488,21 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   Researcher; guard jobs; Apps Script scheduler. Actions minutes estimate: ~4 chains/day
   (~8 min) + Watcher (~25 min/day) + Researcher (~12 min/day) ≈ 1,350 min/month; skipped
   guard runs ~1 min each. 130 tests.
+- 2026-11-17 (after PR 3 merge): first chain run via the Apps Script scheduler worked end to
+  end: Scout -> Tracker -> Signals (12 videos, 4 windows) -> Watcher (4 calls, all answered by
+  Flash-Lite because Flash was busy; 8 moments, 7 ready).
+- 2026-11-17 (PR 4, Gatekeeper): `agents/gatekeeper.py` + `gatekeeper.yml` (chained after the
+  Watcher). Simple gates (leak words `gatekeeper.leak_words` in source title / what happens,
+  blocklist by id or name, used within 20 s of Batch/Posted), duplicates (>= 50% overlap of
+  the shorter clip -> keep higher quality), saturation: per source video one
+  `search_snippets` (part=snippet, videoDuration=short, q "<creator> GTA 6", published after
+  the source; 100 units) + stats (1 unit); keep Shorts that reference the source (video id or
+  creator name in title/description); cache top 15 in Candidates `sat_shorts` (JSON id/views/
+  text) + `sat_checked_at`, refresh after 12 h, max 6 searches/run (budget 700 units/run).
+  A moment is saturated if a cached Short shares >= 2 keywords with reason + hook idea + tags
+  and has >= 20k views. Gemini client: per-model budgets (`model_budgets`); Watcher Flash-Lite
+  fallback 30/day of its own, max 8 calls per run (GitHub minutes). Captions: strong profanity
+  / slurs (English + Hindi, `rules.captions.mask_words`, `word*` = prefix) masked in burned-in
+  captions ("f******"). Open decision for the owner: make the repo public for unlimited
+  Actions minutes (then raise the Watcher budget). 138 tests.
 

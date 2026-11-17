@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from lib import render, sheets
-from lib.config import load_settings
+from lib.config import load_rules, load_settings
 from lib.schema import TABS
 
 TAB = "Batch"
@@ -125,6 +125,7 @@ def render_one(row, cfg, transcriber, day, js_runtime):
             return {"fetch_status": f"failed: {msg[:120]}"}
     w, h, dur, has_audio = probe(src)
     words, lang = transcriber.words(src) if has_audio else ([], "")
+    words = render.mask_words(words, load_rules().get("captions", {}).get("mask_words", []))
     tpl = render.load_template(row["brand"])
     chunks = render.chunk_words(words, tpl["caption"]["max_words"], tpl["caption"]["pause_split"])
     ass_path = work / f"{row['batch_id']}.ass"

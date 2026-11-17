@@ -163,7 +163,7 @@ def extract_json(resp):
 class Gemini:
     def __init__(self, models, daily_budget, bucket, api_key=None, usage=None,
                  http_post=_http_post, retry_wait=30, sleep=time.sleep,
-                 requests_per_minute=None, clock=time.monotonic):
+                 requests_per_minute=None, clock=time.monotonic, model_budgets=None):
         self.api_key = api_key if api_key is not None else os.environ.get(ENV_VAR, "")
         if not self.api_key:
             raise GeminiError(
@@ -173,6 +173,8 @@ class Gemini:
         self.models = list(models)
         self.budget = daily_budget
         self.bucket = bucket
+        # models with their own daily budget (e.g. Flash-Lite fallback): {model: budget}
+        self.model_budgets = dict(model_budgets or {})
         self.usage = usage or Usage()
         self._post = http_post
         self.calls_this_run = 0
@@ -184,8 +186,23 @@ class Gemini:
         self._interval = 60.0 / requests_per_minute if requests_per_minute else 0.0
         self._next_ok = 0.0
 
-    def remaining(self):
-        return max(self.budget - self.usage.used(self.bucket), 0)
+    def _bucket_of(self, model):
+        if model in self.model_budgets:
+            return f"{self.bucket}:{model}", self.model_budgets[model]
+        return self.bucket, self.budget
+
+    def remaining(self, model=None):
+        """Calls left today: for one model, or in total over the configured models."""
+        if model is not None:
+            b, budget = self._bucket_of(model)
+            return max(budget - self.usage.used(b), 0)
+        seen, total = set(), 0
+        for m in self.models or [None]:
+            b, budget = self._bucket_of(m) if m else (self.bucket, self.budget)
+            if b not in seen:
+                seen.add(b)
+                total += max(budget - self.usage.used(b), 0)
+        return total
 
     def generate_json(self, parts, prompt, schema, temperature=0.4):
         """Answer from the first model that serves the request. If all are busy, wait
@@ -209,7 +226,7 @@ class Gemini:
                                  # fewer tokens per frame: faster answers, less quota
                                  "mediaResolution": "MEDIA_RESOLUTION_LOW"},
         }
-        last = None
+        last, busy = None, None
         for model in list(self.models):
             try:
                 return self._one(model, body), model
@@ -219,9 +236,13 @@ class Gemini:
                 with self._lock:
                     if model in self.models:
                         self.models.remove(model)
+            except BudgetReached as e:
+                last = e  # this model's daily budget is used: try the next model
             except Transient as e:
-                last = e  # busy: try the next model for this request
-        if isinstance(last, Transient):
+                last = busy = e  # busy: try the next model for this request
+        if busy is not None:
+            raise busy  # at least one model was only busy: worth retrying later
+        if isinstance(last, BudgetReached):
             raise last
         raise GeminiError(f"no configured model worked ({last}). Update gemini models in "
                           "config/settings.json")
@@ -229,19 +250,19 @@ class Gemini:
     def _one(self, model, body):
         for attempt in (0, 1):
             self._pace()
-            self._take_slot()
+            self._take_slot(model)
             try:
                 return extract_json(self._post(API.format(model=model), body, self.api_key))
             except RateLimited as e:
-                self._refund()
+                self._refund(model)
                 if attempt:
                     raise
                 self._sleep(min(e.wait, 60) + 1)
             except Unavailable:
-                self._refund()
+                self._refund(model)
                 raise
             except ModelNotFound:
-                self._refund()
+                self._refund(model)
                 raise
 
     def _pace(self):
@@ -254,15 +275,17 @@ class Gemini:
                 self._sleep(wait)
             self._next_ok = max(now, self._next_ok) + self._interval
 
-    def _take_slot(self):
+    def _take_slot(self, model=None):
+        b, budget = self._bucket_of(model)
         with self._lock:
-            if self.remaining() <= 0:
-                raise BudgetReached(
-                    f"daily Gemini budget used ({self.usage.used(self.bucket)}/{self.budget})")
-            self.usage.add(self.bucket)  # count before sending: a timeout may still count
+            if self.usage.used(b) >= budget:
+                raise BudgetReached(f"daily Gemini budget used for {model or b} "
+                                    f"({self.usage.used(b)}/{budget})")
+            self.usage.add(b)  # count before sending: a timeout may still count
             self.calls_this_run += 1
 
-    def _refund(self):
+    def _refund(self, model=None):
+        b, _ = self._bucket_of(model)
         with self._lock:
-            self.usage.add(self.bucket, -1)
+            self.usage.add(b, -1)
             self.calls_this_run -= 1

@@ -17,7 +17,7 @@ on:
 
 permissions:
   contents: write
-  actions: read
+  actions: write
 
 concurrency:
   group: watcher
@@ -85,3 +85,8 @@ jobs:
             sleep 5
           done
           exit 1
+      - name: Start Gatekeeper (chain)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/$GITHUB_REPOSITORY/actions/workflows/gatekeeper.yml/dispatches" -f ref="$GITHUB_REF_NAME"

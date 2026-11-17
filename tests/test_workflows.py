@@ -10,7 +10,8 @@ def text(name):
 
 
 def test_chain_targets_exist_and_link_in_order():
-    chain = {"scout.yml": "tracker.yml", "tracker.yml": "signals.yml", "signals.yml": "watcher.yml"}
+    chain = {"scout.yml": "tracker.yml", "tracker.yml": "signals.yml", "signals.yml": "watcher.yml",
+             "watcher.yml": "gatekeeper.yml"}
     for src, dst in chain.items():
         assert f"actions/workflows/{dst}/dispatches" in text(src), src
         assert (WF / dst).exists()
@@ -26,5 +27,5 @@ def test_scheduled_workflows_have_a_guard():
 
 
 def test_chained_workflows_have_no_cron():
-    for name in ("tracker.yml", "signals.yml"):
+    for name in ("tracker.yml", "signals.yml", "gatekeeper.yml"):
         assert "cron:" not in text(name) and "workflow_dispatch:" in text(name)

@@ -1,0 +1,31 @@
+name: Gatekeeper
+
+# Last check on ready moments: leaks, blocklist, already used, duplicates, and the
+# saturation check (other Shorts already showing the moment; ~100 YouTube units per source
+# video, cached 12 h). Started by the Watcher after every run (chain), plus a manual button.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gatekeeper
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Check ready moments
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m agents.gatekeeper

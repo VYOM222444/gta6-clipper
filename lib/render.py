@@ -96,6 +96,21 @@ def ass_text(text):
     return clean_word(text).replace("\n", "\\N")
 
 
+def mask_words(words, bad):
+    """Mask strong profanity / slurs in caption words: 'fucking' -> 'f******'.
+    A list entry matches the whole word; an entry ending in '*' also matches longer words."""
+    exact = {b.lower() for b in bad if not b.endswith("*")}
+    prefix = tuple(b[:-1].lower() for b in bad if b.endswith("*"))
+    out = []
+    for w in words:
+        core = re.sub(r"[^\w]", "", w["word"].lower())
+        if core and (core in exact or (prefix and core.startswith(prefix))):
+            first = next((ch for ch in w["word"] if ch.isalnum()), "*")
+            w = {**w, "word": first + "*" * max(len(core) - 1, 2)}
+        out.append(w)
+    return out
+
+
 def layout_boxes(src_w, src_h, tpl):
     """Where the foreground video sits on the canvas: (fg_w, fg_h, top_y)."""
     if src_h > src_w:  # vertical source: fill the whole canvas
