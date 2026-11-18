@@ -153,7 +153,7 @@
       "Poppins": "https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Bold.ttf",
       "Noto Sans Devanagari": "https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth,wght%5D.ttf"
     },
-    "max_clips_per_run": 10
+    "max_clips_per_run": 25
   },
   "researcher": {
     "_note": "Daily study of GTA 6 Shorts 3-14 days old: winners vs average -> Playbook tab (research.*).",
