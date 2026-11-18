@@ -8,5 +8,9 @@
   "2026-11-17": {
     "watcher": 15,
     "watcher:gemini-flash-lite-latest": 13
+  },
+  "2026-11-18": {
+    "watcher": 1,
+    "watcher:gemini-flash-lite-latest": 7
   }
 }
