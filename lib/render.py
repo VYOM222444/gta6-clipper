@@ -183,18 +183,21 @@ def _filter_path(p):
     return str(p).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
 
 
-def ffmpeg_cmd(src, ass_path, fonts_dir, out, tpl, src_w, src_h, duration, has_audio=True):
+def ffmpeg_cmd(src, ass_path, fonts_dir, out, tpl, src_w, src_h, duration, has_audio=True, zoom=None):
+    """zoom: optional ffmpeg scale expression of t (punch-ins, lib/edits.zoom_expr) on the gameplay."""
+    from lib.edits import zoom_filter
     fg_w, fg_h, top = layout_boxes(src_w, src_h, tpl)
     ass = f"ass='{_filter_path(ass_path)}':fontsdir='{_filter_path(fonts_dir)}'"
     if top == 0:
+        z = f"{zoom_filter(zoom, W, H)}," if zoom else ""
         vf = (f"[0:v]fps=30,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
-              f"setsar=1,{ass}[v]")
+              f"{z}setsar=1,{ass}[v]")
     else:
         zoom_w = int(round(W * tpl.get("fg_zoom", 1.0) / 2) * 2)
         vf = (f"[0:v]fps=30,split=2[a][b];"
               f"[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
               f"boxblur={tpl['bg_blur']}:2,eq=brightness={tpl['bg_brightness']}[bg];"
-              f"[b]scale={zoom_w}:{fg_h},crop={W}:{fg_h}[fg];"
+              f"[b]scale={zoom_w}:{fg_h},crop={W}:{fg_h}" + (f",{zoom_filter(zoom, W, fg_h)}" if zoom else "") + "[fg];"
               f"[bg][fg]overlay=0:{top},setsar=1,{ass}[v]")
     ld = tpl["loudness"]
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(src),

@@ -208,6 +208,7 @@ agents/researcher.py        # daily: GTA 6 Shorts 3-14 d old + fresh 0-72 h -> R
 data/gemini_usage_researcher.json # Researcher's own Gemini counter; committed by its workflow [R]
 .github/workflows/researcher.yml    # daily 01:23 UTC (06:53 IST, all) + 11:23 UTC (16:53 IST, fresh only) + manual [R]
 lib/gemini.py               # Gemini generateContent + YouTube windows, daily counter, model fallback [B2]
+lib/edits.py                # editing pack: payoff/hits from audio, zooms, SFX, slow-mo replay, end cut, Demucs [E]
 lib/render.py               # caption chunks, keyword highlight, .ass builder, ffmpeg command, post .txt [C]
 agents/render_batch.py      # Fetcher + Renderer: approved Batch rows -> Drive mp4 + txt  [C]
 templates/<brand>.json      # v1 style per brand: accent colour, fonts, sizes, positions  [C]
@@ -555,3 +556,16 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   clip downloads, not Whisper, are the slow part; CPU still works (~1-2 min per clip).
   160 tests. Not verified on a real Colab GPU yet: check the first run's log line
   "CUDA libraries preloaded" / "Whisper 'small' on GPU/CPU".
+- 2026-11-19 (editing pack): `lib/edits.py` + render_batch. Per clip: loudness analysis finds the
+  payoff second (loudest 0.5 s after 1 s) and hits (sudden loudness jumps); plan = punch-in
+  zooms (x1.12 for 0.7 s on hits + payoff, max 4, gameplay only so labels/captions stay still),
+  impact SFX on the payoff, whoosh before zooms, optional slow-mo replay (payoff -1.2..+0.8 s at
+  0.5x appended, second impact inside it), optional end 1.5 s after the payoff (min 8 s).
+  SFX generated with ffmpeg lavfi (no files). Second ffmpeg pass only when replay/SFX are on;
+  if it fails the plain clip is kept. Which effects: Playbook `research.now.*` > `research.*`
+  > `settings.render.edits` defaults (zoom/impact/whoosh on, replay/end-cut/music removal off).
+  Music removal: Demucs two-stem (voice kept, rest x0.3), off by default, notebook installs it
+  only when on. "Beat sync" = zooms on the clip's own hits (music is added later in the apps).
+  `template_version` records the edits (e.g. "2+zoom2,impact,whoosh"). Notebook: `MAX_CLIPS = 3`
+  in the last cell for the first test (env CLIPPER_MAX_CLIPS); set 0 after. Checked with real
+  ffmpeg on a synthetic clip (payoff/hits found, zoom visible, replay length right). 165 tests.

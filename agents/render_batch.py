@@ -21,7 +21,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from lib import render, sheets
+from lib import edits, render, sheets
 from lib.config import load_rules, load_settings
 from lib.schema import TABS
 
@@ -164,7 +164,44 @@ def load_audio(path, sr=16000):
     return np.frombuffer(p.stdout, np.int16).astype(np.float32) / 32768.0
 
 
-def render_one(row, cfg, transcriber, day, js_runtime):
+def prepare_edits(cfg, work):
+    """Effects for this run: Playbook findings > settings.render.edits. Generates the SFX once."""
+    ecfg = dict(cfg.get("edits") or {})
+    if not ecfg.get("enabled"):
+        return None
+    flags, src = ecfg, {}
+    try:
+        rows = sheets.read_records(sheets.open_sheet(sheets.get_client(), load_settings()["sheet"]["id"]).worksheet("Playbook"))
+        flags, src = edits.flags_from_playbook(rows, ecfg)
+    except Exception as e:  # no Playbook: defaults
+        print(f"note: Playbook not read ({e}); using default edits")
+        flags = {k: bool(ecfg.get(k)) for k in edits.FLAG_KEYS}
+    print("Edits:", ", ".join(f"{k}={'on' if v else 'off'} ({src.get(k, 'default')})" for k, v in flags.items()))
+    work.mkdir(parents=True, exist_ok=True)
+    ecfg["impact_path"], ecfg["whoosh_path"] = work / "sfx_impact.wav", work / "sfx_whoosh.wav"
+    for cmd in edits.sfx_cmds(ecfg["impact_path"], ecfg["whoosh_path"]):
+        subprocess.run(cmd, check=True, capture_output=True)
+    ecfg["flags"] = flags
+    return ecfg
+
+
+def remove_music(src, work, ecfg):
+    """Demucs: keep the voice, turn music + game sound down. Returns the new source or src."""
+    wav, out_dir = work / f"{src.stem}.wav", work / "demucs"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-vn", "-ac", "2", "-ar", "44100", str(wav)],
+                   check=True, capture_output=True)
+    p = subprocess.run(edits.demucs_cmd(wav, out_dir), capture_output=True, text=True)
+    stem = out_dir / "htdemucs" / wav.stem
+    if p.returncode != 0 or not (stem / "vocals.wav").exists():
+        print(f"  note: music removal failed, original audio kept ({(p.stderr or '').strip()[-100:]})")
+        return src
+    out = work / f"{src.stem}.nomusic.mp4"
+    subprocess.run(edits.remix_cmd(src, stem / "vocals.wav", stem / "no_vocals.wav", out,
+                                   ecfg.get("rest_volume", 0.3)), check=True, capture_output=True)
+    return out
+
+
+def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None):
     work = Path(cfg["work_dir"])
     work.mkdir(parents=True, exist_ok=True)
     src = work / f"{row['batch_id']}.src.mp4"
@@ -174,7 +211,14 @@ def render_one(row, cfg, transcriber, day, js_runtime):
             msg = ((p.stderr or p.stdout).strip().splitlines() or ["download failed"])[-1]
             return {"fetch_status": f"failed: {msg[:120]}"}
     w, h, dur, has_audio = probe(src)
-    words, lang = transcriber.words(src) if has_audio else ([], "")
+    plan, used = None, src
+    if ecfg and has_audio and ecfg.get("remove_music"):
+        used = remove_music(src, work, ecfg)
+    if ecfg and has_audio:
+        payoff, hits = edits.analyze(load_audio(used))
+        plan = edits.plan(dur, payoff, hits, ecfg["flags"], ecfg)
+        plan["source_end"] = dur
+    words, lang = transcriber.words(used) if has_audio else ([], "")
     words = render.mask_words(words, load_rules().get("captions", {}).get("mask_words", []))
     tpl = render.load_template(row["brand"])
     chunks = render.chunk_words(words, tpl["caption"]["max_words"], tpl["caption"]["pause_split"])
@@ -184,16 +228,30 @@ def render_one(row, cfg, transcriber, day, js_runtime):
     mp4, txt = output_paths(cfg["output_dir"], row, day)
     mp4.parent.mkdir(parents=True, exist_ok=True)
     tmp = work / f"{row['batch_id']}.out.mp4"
-    p = subprocess.run(render.ffmpeg_cmd(src, ass_path, cfg["fonts_dir"], tmp, tpl, w, h, dur, has_audio),
+    end = plan["end"] if plan else dur
+    zoom = edits.zoom_expr(plan["zooms"], ecfg.get("zoom_amount", 0.12)) if plan else None
+    p = subprocess.run(render.ffmpeg_cmd(used, ass_path, cfg["fonts_dir"], tmp, tpl, w, h, end, has_audio, zoom),
                        capture_output=True, text=True)
     if p.returncode != 0:
         return {"fetch_status": "done", "render_status": f"failed: {p.stderr.strip()[-120:]}"}
+    edit_tags = []
+    if plan:
+        cmd = edits.pass2_cmd(tmp, work / f"{row['batch_id']}.fx.mp4", plan, ecfg["impact_path"],
+                              ecfg["whoosh_path"], ecfg)
+        if cmd:
+            p2 = subprocess.run(cmd, capture_output=True, text=True)
+            if p2.returncode == 0:
+                shutil.move(str(work / f"{row['batch_id']}.fx.mp4"), str(tmp))
+            else:
+                print(f"  note: effects pass failed, plain clip kept ({p2.stderr.strip()[-100:]})")
+                plan["replay"], plan["impacts"], plan["whooshes"] = None, [], []
+        edit_tags = edits.tags(plan, bool(ecfg.get("remove_music")) and used != src)
     shutil.move(str(tmp), str(mp4))  # Drive is a different disk: move, not rename
     txt.write_text(render.post_text(row), encoding="utf-8")
     print(f"  {row['batch_id']} {row['brand']}: {dur:.0f}s, {len(words)} words ({lang}) -> {mp4}")
     return {"fetch_status": "done", "render_status": "done", "output_path": str(mp4),
             "rendered_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "template_version": str(tpl.get("version", ""))}
+            "template_version": str(tpl.get("version", "")) + ("+" + ",".join(edit_tags) if edit_tags else "")}
 
 
 def main():
@@ -211,18 +269,20 @@ def main():
     except sheets.SheetSetupError as e:
         print(f"RENDER FAILED (sheet): {e}")
         return 1
-    todo = to_render(rows, cfg["max_clips_per_run"])
+    limit = int(os.environ.get("CLIPPER_MAX_CLIPS") or 0) or cfg["max_clips_per_run"]
+    todo = to_render(rows, limit)
     print(f"{len(todo)} approved clips to render.")
     if not todo:
         print("Nothing to do. Type 'yes' in the approved column of the Batch tab first.")
         return 0
     transcriber = Transcriber(cfg["whisper_model"])
+    ecfg = prepare_edits(cfg, Path(cfg["work_dir"]))
     day = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")
     headers = TABS[TAB]
     ok = 0
     for row in todo:
         try:
-            result = render_one(row, cfg, transcriber, day, js_runtime)
+            result = render_one(row, cfg, transcriber, day, js_runtime, ecfg)
         except Exception as e:  # keep going with the other clips
             result = {"render_status": f"failed: {type(e).__name__}: {str(e)[:100]}"}
             if (Path(cfg["work_dir"]) / f"{row['batch_id']}.src.mp4").exists():
