@@ -129,3 +129,65 @@ def test_mask_words():
     out = [w["word"] for w in render.mask_words(words, ["fuck*", "shit", "dick", "chutiya"])]
     assert out == ["what", "F******", "s***", "dickens", "c******"]
     assert render.mask_words(words, [])[1]["word"] == "Fucking"
+
+
+# --- GPU -> CPU fallback (Colab: "libcublas.so.12 is not found") ---------------------------------
+
+def make_transcriber(monkeypatch, models):
+    """Transcriber whose _load returns scripted fake models; first device is cuda."""
+    import numpy as np
+    loads = []
+
+    def fake_load(self, device):
+        loads.append(device)
+        return models[device]
+    monkeypatch.setattr(render_batch.Transcriber, "_load", fake_load)
+    monkeypatch.setattr(render_batch, "preload_cuda_libs", lambda: [])
+    monkeypatch.setattr(render_batch, "load_audio", lambda path: np.ones(16000, dtype="float32"))
+    import sys, types
+    monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda: True)))
+    return render_batch.Transcriber("small"), loads
+
+
+class FakeModel:
+    def __init__(self, error=None):
+        self.error, self.calls = error, 0
+
+    def transcribe(self, audio, **kw):
+        self.calls += 1
+        if self.error:
+            def gen():
+                raise self.error
+                yield
+            return gen(), None      # like faster-whisper: the error appears when segments are read
+        word = type("W", (), {"word": " hi", "start": 0.0, "end": 0.5})()
+        seg = type("S", (), {"words": [word]})()
+        return iter([seg]), type("I", (), {"language": "en"})()
+
+
+def test_gpu_failure_falls_back_to_cpu_once(monkeypatch):
+    gpu = FakeModel(RuntimeError("Library libcublas.so.12 is not found or cannot be loaded"))
+    cpu = FakeModel()
+    t, loads = make_transcriber(monkeypatch, {"cuda": gpu, "cpu": cpu})
+    words, lang = t.words("x.mp4")
+    assert words == [{"word": "hi", "start": 0.0, "end": 0.5}] and lang == "en"
+    assert loads == ["cuda", "cpu"] and t.device == "cpu"
+    t.words("y.mp4")                       # later clips go straight to the CPU model
+    assert gpu.calls == 1 and cpu.calls == 2 and loads == ["cuda", "cpu"]
+
+
+def test_other_errors_are_not_swallowed(monkeypatch):
+    t, loads = make_transcriber(monkeypatch, {"cuda": FakeModel(ValueError("bad audio")), "cpu": FakeModel()})
+    import pytest
+    with pytest.raises(ValueError):
+        t.words("x.mp4")
+    assert loads == ["cuda"]
+
+
+def test_is_gpu_error():
+    assert render_batch.is_gpu_error(RuntimeError("Library libcudnn_ops.so.9 not found"))
+    assert not render_batch.is_gpu_error(ValueError("bad audio"))
+
+
+def test_preload_cuda_libs_never_raises():
+    assert isinstance(render_batch.preload_cuda_libs(), list)

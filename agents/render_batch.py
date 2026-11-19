@@ -83,17 +83,60 @@ def probe(path):
     return int(v.get("width", 1920)), int(v.get("height", 1080)), float(d["format"]["duration"]), has_audio
 
 
+GPU_ERRORS = ("libcublas", "libcudnn", "cuda", "cublas", "cudnn", "ctranslate2")
+
+
+def preload_cuda_libs():
+    """Best effort: load the pip-installed CUDA 12 libraries (nvidia-cublas-cu12, nvidia-cudnn-cu12)
+    so CTranslate2 finds libcublas.so.12 on Colab. Returns the libraries that were loaded."""
+    import ctypes
+    import glob
+    import site
+    loaded = []
+    roots = list(site.getsitepackages()) + [site.getusersitepackages()]
+    for name in ("cublas", "cudnn"):
+        for root in roots:
+            for so in sorted(glob.glob(f"{root}/nvidia/{name}/lib/lib*.so*")):
+                try:
+                    ctypes.CDLL(so, mode=ctypes.RTLD_GLOBAL)
+                    loaded.append(Path(so).name)
+                except OSError:
+                    pass
+    return loaded
+
+
+def is_gpu_error(exc):
+    return any(k in str(exc).lower() for k in GPU_ERRORS)
+
+
 class Transcriber:
+    """Whisper word timestamps. Uses the GPU when it works; if the GPU is missing a library
+    (Colab: "libcublas.so.12 is not found") it switches to the CPU once and carries on."""
+
     def __init__(self, size):
-        from faster_whisper import WhisperModel
+        self.size = size
         try:
             import torch
             cuda = torch.cuda.is_available()
         except ImportError:
             cuda = False
-        self.model = WhisperModel(size, device="cuda" if cuda else "cpu",
-                                  compute_type="float16" if cuda else "int8")
-        print(f"Whisper '{size}' on {'GPU' if cuda else 'CPU'}")
+        if cuda:
+            try:
+                print("CUDA libraries preloaded:", ", ".join(preload_cuda_libs()) or "none found")
+            except Exception as e:  # never block the render on this
+                print(f"note: CUDA preload skipped: {e}")
+        self.device = "cuda" if cuda else "cpu"
+        self.model = self._load(self.device)
+
+    def _load(self, device):
+        from faster_whisper import WhisperModel
+        model = WhisperModel(self.size, device=device, compute_type="float16" if device == "cuda" else "int8")
+        print(f"Whisper '{self.size}' on {'GPU' if device == 'cuda' else 'CPU'}")
+        return model
+
+    def _run(self, audio):
+        segments, info = self.model.transcribe(audio, word_timestamps=True, vad_filter=True)
+        return words_from_segments(list(segments)), info.language   # list(): errors surface here
 
     def words(self, path):
         # Decode with ffmpeg ourselves: faster-whisper's own decoder (PyAV) breaks when Colab
@@ -101,8 +144,15 @@ class Transcriber:
         audio = load_audio(path)
         if audio.size == 0:
             return [], ""
-        segments, info = self.model.transcribe(audio, word_timestamps=True, vad_filter=True)
-        return words_from_segments(list(segments)), info.language
+        try:
+            return self._run(audio)
+        except Exception as e:
+            if self.device != "cuda" or not is_gpu_error(e):
+                raise
+            print(f"GPU failed ({str(e)[:100]}); switching to CPU for the rest of this run.")
+            self.device = "cpu"
+            self.model = self._load("cpu")
+            return self._run(audio)
 
 
 def load_audio(path, sr=16000):
