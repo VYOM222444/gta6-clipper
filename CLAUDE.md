@@ -586,3 +586,7 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   the source file had NO video stream (stale/partial/audio-only file kept in the Colab work dir
   from an earlier run; the zoom was never the problem). `probe` now raises if there is no video;
   render_one deletes such a file and downloads again once, else fails with "bad download".
+- 2026-11-19 (clip 04 again): even a fresh download of 2026-11-18-04 (video v8z3imeVPCk) has no video
+  stream (probably only audio formats offered to yt-dlp for that video; -01 is refused outright).
+  yt-dlp FORMAT now requires a video stream in every fallback, and on this failure the run prints
+  how many video formats yt-dlp sees + its last message. Owner: skip clips that keep failing.
