@@ -24,4 +24,5 @@ def test_render_notebook_installs_gpu_libs_only_with_a_gpu():
     nb = json.loads((Path(__file__).resolve().parent.parent / "colab" / "render.ipynb").read_text(encoding="utf-8"))
     install = "".join(nb["cells"][2]["source"])
     assert "nvidia-smi" in install and "nvidia-cublas-cu12" in install
+    assert "shutil.which('nvidia-smi')" in install, "nvidia-smi does not exist on CPU runtimes: never run it directly"
     assert install.index("nvidia-smi") < install.index("nvidia-cublas-cu12")

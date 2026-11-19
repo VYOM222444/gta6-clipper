@@ -569,3 +569,7 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   `template_version` records the edits (e.g. "2+zoom2,impact,whoosh"). Notebook: `MAX_CLIPS = 3`
   in the last cell for the first test (env CLIPPER_MAX_CLIPS); set 0 after. Checked with real
   ffmpeg on a synthetic clip (payoff/hits found, zoom visible, replay length right). 165 tests.
+- 2026-11-19 (notebook fix): render notebook cell 2 crashed on a CPU runtime
+  (`FileNotFoundError: nvidia-smi`, my bug in the GPU-library check). Now `shutil.which('nvidia-smi')`;
+  test guards it. Lesson: never call GPU tools directly in notebook cells; test the cell logic
+  on a machine without a GPU.
