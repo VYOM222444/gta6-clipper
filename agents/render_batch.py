@@ -27,7 +27,7 @@ from lib.schema import TABS
 
 TAB = "Batch"
 YES = {"yes", "y", "✅", "ok", "true"}
-FORMAT = "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/b[height<=1080]/b"
+FORMAT = "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080][vcodec!=none]/bv*+ba/b[vcodec!=none]"
 
 
 def _f(x, d=0.0):
@@ -219,6 +219,12 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None):
         except (ValueError, subprocess.CalledProcessError) as e:
             src.unlink(missing_ok=True)
             if attempt == 2:
+                lf = subprocess.run([sys.executable, "-m", "yt_dlp", "-F", "--no-warnings",
+                                     f"https://www.youtube.com/watch?v={row['video_id']}"],
+                                    capture_output=True, text=True)
+                vids = [l for l in lf.stdout.splitlines() if "video only" in l or " mp4 " in l]
+                print(f"  {row['batch_id']}: no video in download; formats listed with video: {len(vids)}")
+                print("   " + ((lf.stderr or lf.stdout).strip().splitlines() or ["(no output)"])[-1][:200])
                 return {"fetch_status": f"failed: bad download ({e})"[:140]}
     plan, used = None, src
     if ecfg and has_audio and ecfg.get("remove_music"):
