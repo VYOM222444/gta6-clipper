@@ -153,7 +153,27 @@
       "Poppins": "https://github.com/google/fonts/raw/main/ofl/poppins/Poppins-Bold.ttf",
       "Noto Sans Devanagari": "https://github.com/google/fonts/raw/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth,wght%5D.ttf"
     },
-    "max_clips_per_run": 10
+    "max_clips_per_run": 10,
+    "edits": {
+      "_note": "Editing pack (lib/edits.py). Playbook findings (research.now.* then research.*) override these defaults per effect. remove_music = Demucs (slow, Colab).",
+      "enabled": true,
+      "zoom": true,
+      "impact": true,
+      "whoosh": true,
+      "replay": false,
+      "end_after_payoff": false,
+      "remove_music": false,
+      "zoom_amount": 0.12,
+      "max_zooms": 4,
+      "tail_seconds": 1.5,
+      "min_seconds": 8,
+      "replay_before": 1.2,
+      "replay_after": 0.8,
+      "replay_speed": 0.5,
+      "impact_volume": 0.9,
+      "whoosh_volume": 0.5,
+      "rest_volume": 0.3
+    }
   },
   "researcher": {
     "_note": "Daily study of GTA 6 Shorts 3-14 days old (settled) + twice-daily fresh tier 0-72 h (what works right now): winners vs average -> Playbook tab (research.*, research.now.*).",
