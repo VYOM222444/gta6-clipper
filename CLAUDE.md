@@ -573,3 +573,12 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   (`FileNotFoundError: nvidia-smi`, my bug in the GPU-library check). Now `shutil.which('nvidia-smi')`;
   test guards it. Lesson: never call GPU tools directly in notebook cells; test the cell logic
   on a machine without a GPU.
+- 2026-11-19 (first editing-pack test, 3 clips on Colab CPU): 1 rendered; 2026-11-18-04 failed in
+  ffmpeg pass 1 ("... [v] matches no streams / Error initializing complex filters"), -01 failed
+  as before (download refused, skipped on purpose). Likely cause: zooms used `scale` with a time
+  variable (`eval=frame`, `t`), which Colab's older ffmpeg (4.4) may not support; only clips with
+  zooms are affected. Fix: zooms are now an overlay of a constant zoomed copy with
+  `enable=between(t,..)` (`edits.zoom_chain`, basic filters only); render_batch retries a clip
+  without zooms if ffmpeg still fails, and failed rows keep the start AND end of ffmpeg's error.
+  Tested on 3 source shapes + frame check. 166 tests. Lesson: Colab's ffmpeg is older than the
+  dev box's: prefer basic filters.

@@ -229,11 +229,17 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None):
     mp4.parent.mkdir(parents=True, exist_ok=True)
     tmp = work / f"{row['batch_id']}.out.mp4"
     end = plan["end"] if plan else dur
-    zoom = edits.zoom_expr(plan["zooms"], ecfg.get("zoom_amount", 0.12)) if plan else None
+    zoom = (plan["zooms"], ecfg.get("zoom_amount", 0.12)) if plan and plan["zooms"] else None
     p = subprocess.run(render.ffmpeg_cmd(used, ass_path, cfg["fonts_dir"], tmp, tpl, w, h, end, has_audio, zoom),
                        capture_output=True, text=True)
+    if p.returncode != 0 and zoom:   # never lose a clip over a zoom: retry plain
+        print(f"  note: zoom failed, retrying without it ({p.stderr.strip()[:200]})")
+        plan["zooms"] = []
+        p = subprocess.run(render.ffmpeg_cmd(used, ass_path, cfg["fonts_dir"], tmp, tpl, w, h, end, has_audio),
+                           capture_output=True, text=True)
     if p.returncode != 0:
-        return {"fetch_status": "done", "render_status": f"failed: {p.stderr.strip()[-120:]}"}
+        err = p.stderr.strip()
+        return {"fetch_status": "done", "render_status": f"failed: {err[:80]} ... {err[-100:]}"}
     edit_tags = []
     if plan:
         cmd = edits.pass2_cmd(tmp, work / f"{row['batch_id']}.fx.mp4", plan, ecfg["impact_path"],
