@@ -18,3 +18,10 @@ def test_notebook_is_clean_and_safe(path):
     first = "".join(nb["cells"][1]["source"])
     assert "extraHeader" in first and 'os.chdir("/content")' in first
     assert "x-access-token:{token}@github.com" not in first
+
+
+def test_render_notebook_installs_gpu_libs_only_with_a_gpu():
+    nb = json.loads((Path(__file__).resolve().parent.parent / "colab" / "render.ipynb").read_text(encoding="utf-8"))
+    install = "".join(nb["cells"][2]["source"])
+    assert "nvidia-smi" in install and "nvidia-cublas-cu12" in install
+    assert install.index("nvidia-smi") < install.index("nvidia-cublas-cu12")

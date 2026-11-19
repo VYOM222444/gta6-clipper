@@ -546,3 +546,12 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   runs job `research-fresh` (no guard; named differently so the morning guard is unaffected);
   manual input mode=fresh. Budget: ~1,700 YouTube units/day, up to 80 Flash-Lite calls/day.
   155 tests.
+- 2026-11-19 (Colab GPU fix): first render of the 24-clip batch failed on the Colab GPU
+  ("libcublas.so.12 is not found": Whisper loads on the GPU, crashes when it transcribes).
+  `agents/render_batch.py`: `Transcriber` preloads the pip CUDA libs (`preload_cuda_libs`), and
+  if transcribing fails with a GPU/CUDA error it reloads Whisper on the CPU once and carries on
+  (`is_gpu_error`); other errors still fail the clip. `colab/render.ipynb` cell 2 installs
+  `nvidia-cublas-cu12 nvidia-cudnn-cu12` only when `nvidia-smi` finds a GPU. With a GPU the
+  clip downloads, not Whisper, are the slow part; CPU still works (~1-2 min per clip).
+  160 tests. Not verified on a real Colab GPU yet: check the first run's log line
+  "CUDA libraries preloaded" / "Whisper 'small' on GPU/CPU".
