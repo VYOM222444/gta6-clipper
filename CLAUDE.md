@@ -582,3 +582,7 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   without zooms if ffmpeg still fails, and failed rows keep the start AND end of ffmpeg's error.
   Tested on 3 source shapes + frame check. 166 tests. Lesson: Colab's ffmpeg is older than the
   dev box's: prefer basic filters.
+- 2026-11-19 (real cause of clip 04): ffmpeg said "Stream specifier ':v' ... matches no streams":
+  the source file had NO video stream (stale/partial/audio-only file kept in the Colab work dir
+  from an earlier run; the zoom was never the problem). `probe` now raises if there is no video;
+  render_one deletes such a file and downloads again once, else fails with "bad download".
