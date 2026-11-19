@@ -148,18 +148,16 @@ def tags(p, remove_music=False):
 
 # --- ffmpeg pieces ------------------------------------------------------------------------------
 
-def zoom_expr(zooms, amount=0.12, hold=0.7):
-    """Scale factor as an ffmpeg expression of t: a quick punch-in at each zoom time."""
+def zoom_chain(src, dst, zooms, w, h, amount=0.12, hold=0.7):
+    """Punch-in zooms with only basic filters (old ffmpeg, e.g. Colab's 4.4, has no time variable
+    in scale): a constant zoomed-in copy is overlaid on the video during each zoom window.
+    Returns a filter-graph piece `[src] ... [dst]`, or "" when there are no zooms."""
     if not zooms:
-        return None
-    terms = "+".join(f"between(t,{z:.2f},{z + hold:.2f})" for z in zooms)
-    return f"(1+{amount}*min(1,{terms}))"
-
-
-def zoom_filter(expr, w, h):
-    """Scale up by expr each frame, then crop back to w x h around the centre."""
-    return (f"scale=w='trunc({w}*{expr}/2)*2':h='trunc({h}*{expr}/2)*2':eval=frame,"
-            f"crop={w}:{h}")
+        return ""
+    zw, zh = int(round(w * (1 + amount) / 2) * 2), int(round(h * (1 + amount) / 2) * 2)
+    on = "+".join(f"between(t,{z:.2f},{z + hold:.2f})" for z in zooms)
+    return (f"[{src}]split=2[{dst}a][{dst}b];[{dst}b]scale={zw}:{zh},crop={w}:{h}[{dst}z];"
+            f"[{dst}a][{dst}z]overlay=0:0:enable='{on}'[{dst}]")
 
 
 def sfx_cmds(impact_path, whoosh_path):

@@ -184,21 +184,26 @@ def _filter_path(p):
 
 
 def ffmpeg_cmd(src, ass_path, fonts_dir, out, tpl, src_w, src_h, duration, has_audio=True, zoom=None):
-    """zoom: optional ffmpeg scale expression of t (punch-ins, lib/edits.zoom_expr) on the gameplay."""
-    from lib.edits import zoom_filter
+    """zoom: optional (times, amount): punch-in zooms on the gameplay (lib/edits.zoom_chain)."""
+    from lib.edits import zoom_chain
     fg_w, fg_h, top = layout_boxes(src_w, src_h, tpl)
     ass = f"ass='{_filter_path(ass_path)}':fontsdir='{_filter_path(fonts_dir)}'"
     if top == 0:
-        z = f"{zoom_filter(zoom, W, H)}," if zoom else ""
-        vf = (f"[0:v]fps=30,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
-              f"{z}setsar=1,{ass}[v]")
+        zc = zoom_chain("g0", "g", zoom[0], W, H, zoom[1]) if zoom and zoom[0] else ""
+        if zc:
+            vf = (f"[0:v]fps=30,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}[g0];"
+                  f"{zc};[g]setsar=1,{ass}[v]")
+        else:
+            vf = (f"[0:v]fps=30,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+                  f"setsar=1,{ass}[v]")
     else:
         zoom_w = int(round(W * tpl.get("fg_zoom", 1.0) / 2) * 2)
         vf = (f"[0:v]fps=30,split=2[a][b];"
               f"[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
               f"boxblur={tpl['bg_blur']}:2,eq=brightness={tpl['bg_brightness']}[bg];"
-              f"[b]scale={zoom_w}:{fg_h},crop={W}:{fg_h}" + (f",{zoom_filter(zoom, W, fg_h)}" if zoom else "") + "[fg];"
-              f"[bg][fg]overlay=0:{top},setsar=1,{ass}[v]")
+              f"[b]scale={zoom_w}:{fg_h},crop={W}:{fg_h}[fg0];")
+        zc = zoom_chain("fg0", "fg", zoom[0], W, fg_h, zoom[1]) if zoom and zoom[0] else ""
+        vf += (zc + ";" if zc else "[fg0]null[fg];") + f"[bg][fg]overlay=0:{top},setsar=1,{ass}[v]"
     ld = tpl["loudness"]
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(src),
            "-filter_complex", vf, "-map", "[v]"]

@@ -45,9 +45,14 @@ def test_flags_now_beats_7day_beats_default():
     assert flags["replay"] is True and flags["whoosh"] is True and src["whoosh"] == "default"
 
 
-def test_zoom_expr_and_pass2():
-    assert edits.zoom_expr([]) is None
-    assert "between(t,4.00,4.70)" in edits.zoom_expr([4.0])
+def test_zoom_chain_uses_only_basic_filters():
+    assert edits.zoom_chain("a", "b", [], 1080, 1920) == ""
+    c = edits.zoom_chain("g0", "g", [4.0, 9.0], 1080, 1920)
+    assert "between(t,4.00,4.70)+between(t,9.00,9.70)" in c and "overlay=0:0:enable=" in c
+    assert "eval=frame" not in c and "scale=1210:2150" in c   # no time variable inside scale
+
+
+def test_pass2():
     p = edits.plan(14.0, 9.25, [4.0], ALL, CFG)
     cmd = " ".join(edits.pass2_cmd("m.mp4", "o.mp4", p, "i.wav", "w.wav", CFG))
     assert "atempo=0.5" in cmd and "concat=n=2" in cmd and "adelay=9250|9250" in cmd
