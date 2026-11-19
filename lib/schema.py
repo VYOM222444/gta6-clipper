@@ -55,5 +55,6 @@ TABS = {
         "length_s", "caption_style", "title", "hashtags", "notes", "analyzed_at",
         "channel_title", "subscribers", "published_at", "collected_at", "score", "features",
         "model", "credits",
+        "fresh_label", "views_per_hour", "fresh_at",
     ],
 }

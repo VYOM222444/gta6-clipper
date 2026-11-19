@@ -145,3 +145,111 @@ def test_rows_round_trip_through_sheet():
     sheets.upsert_rows(ws, TABS["Research"], "research_id", rows)   # next day's collect
     rec = ws.get_all_records()[0]
     assert json.loads(rec["features"])["pace"] == "fast"            # analysis kept
+
+
+# --- fresh tier ("right now") --------------------------------------------------------------
+
+def fresh_short(vid, views, hours_old, title="GTA 6 police chase 😂", ch="UC1"):
+    v = short(vid, views, title=title, ch=ch)
+    v["snippet"]["publishedAt"] = (NOW - timedelta(hours=hours_old)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return v
+
+
+def test_fresh_labels_compare_same_age_only():
+    # 5 young Shorts (3 h) and 5 older (40 h). Old ones have more views but the same views/hour
+    # spread, so each age bucket gets its own rising Short.
+    vids = [fresh_short(f"y{i}", (i + 1) * 300, 3) for i in range(5)] + \
+           [fresh_short(f"o{i}", (i + 1) * 4000, 40) for i in range(5)]
+    rows = researcher.build_fresh_rows(vids, [], R, CFG, NOW)
+    lab = {r["video_id"]: r["fresh_label"] for r in rows}
+    assert lab["y4"] == "rising" and lab["o4"] == "rising"
+    assert lab["y0"] == "fresh_low" and lab["o0"] == "fresh_low"
+    assert "label" not in rows[0] and "score" not in rows[0]   # settled columns untouched
+    assert rows[0]["views_per_hour"] == 100.0 and rows[0]["fresh_at"]
+
+
+def test_fresh_small_buckets_merge():
+    vids = [fresh_short("a", 100, 2), fresh_short("b", 5000, 30)] + \
+           [fresh_short(f"o{i}", (i + 1) * 1000, 30) for i in range(4)]
+    rows = researcher.build_fresh_rows(vids, [], R, CFG, NOW)
+    assert len(rows) == 6 and sum(r["fresh_label"] == "rising" for r in rows) == 1
+
+
+def test_fresh_window_excludes_old_and_too_new():
+    vids = [fresh_short("old", 1000, 80), fresh_short("baby", 10, 0.5), fresh_short("ok", 100, 10)]
+    assert [r["video_id"] for r in researcher.build_fresh_rows(vids, [], R, CFG, NOW)] == ["ok"]
+
+
+def test_collect_fresh_adds_scout_shorts_without_search():
+    cands = [{"video_id": "s1", "kind": "short", "published_at": "2026-11-25T02:00:00Z"},
+             {"video_id": "long", "kind": "long", "published_at": "2026-11-25T02:00:00Z"},
+             {"video_id": "s_old", "kind": "short", "published_at": "2026-11-20T02:00:00Z"}]
+    ids = researcher.scout_short_ids(cands, NOW)
+    assert ids == ["s1"]
+    yt = FakeYouTube(search={"GTA 6 #shorts": ["a"]}, videos=[fresh_short("a", 500, 5), fresh_short("s1", 900, 10)],
+                     channels=[])
+    rows, notes, n, n_search = researcher.collect_fresh(yt, S, R, NOW, ids)
+    assert {r["video_id"] for r in rows} == {"a", "s1"} and n_search == 1 and n == 2
+
+
+def fresh_rows(n_w=8, n_a=8, feats_w=FEATS_W, feats_a=FEATS_A):
+    rows = []
+    for i in range(n_w):
+        rows.append({"research_id": f"fw{i}", "fresh_label": "rising", "title": "GTA 6 cheetah chase",
+                     "hashtags": "#gta6", "length_s": "20", "fresh_at": "2026-11-25T06:00:00Z",
+                     "features": json.dumps({**feats_w, "topic": "cheetah chase on beach"})})
+    for i in range(n_a):
+        rows.append({"research_id": f"fa{i}", "fresh_label": "fresh_average", "title": "GTA 6 map",
+                     "hashtags": "#gta6", "length_s": "40", "fresh_at": "2026-11-25T06:00:00Z",
+                     "features": json.dumps({**feats_a, "topic": "map tour"})})
+    return rows
+
+
+def test_findings_now_rows_hot_words_and_shift():
+    # 7-day data says loop endings win; right now the average Shorts loop and rising ones don't.
+    now_w = {**FEATS_W, "loop_ending": False, "music_type": "phonk", "cuts_on_beat": True}
+    now_a = {**FEATS_A, "loop_ending": True, "music_type": "none", "cuts_on_beat": False}
+    rows = research_rows() + fresh_rows(feats_w=now_w, feats_a=now_a)
+    play, src = researcher.findings_now(rows, CFG, NOW)
+    ids = {p["rule_id"]: p for p in play}
+    assert "n=8 rising / 8 average" in src
+    assert ids["research.now.sound.music_type=phonk"]["rule"].startswith("DO")
+    assert ids["research.now.sound.cuts_on_beat"]["rule"].startswith("DO")
+    assert "research.now.topics.word:cheetah" in ids and "research.now.topics.word:map" not in ids
+    loop = ids["research.now.editing.loop_ending"]["rule"]
+    assert loop.startswith("AVOID") and "SHIFT (7-day: DO)" in loop
+    # settled findings ignore fresh rows and new music fields that old rows lack
+    settled, _ = researcher.findings(rows, CFG, NOW)
+    assert not any(p["rule_id"].startswith("research.now") for p in settled)
+    assert not any("music_type" in p["rule_id"] for p in settled)
+
+
+def test_findings_now_need_enough_and_recent():
+    play, msg = researcher.findings_now(fresh_rows(3, 8), CFG, NOW)
+    assert play == [] and "not enough" in msg
+    old = [{**r, "fresh_at": "2026-11-20T06:00:00Z"} for r in fresh_rows()]
+    assert researcher.findings_now(old, CFG, NOW)[0] == []
+
+
+def test_pick_fresh_only_recent_unanalysed():
+    rows = [{"research_id": "r1", "fresh_label": "rising", "fresh_at": "2026-11-25T10:00:00Z", "age_days": "1",
+             "views_per_hour": "50", "features": ""},
+            {"research_id": "r2", "fresh_label": "rising", "fresh_at": "2026-11-25T10:00:00Z", "age_days": "1",
+             "views_per_hour": "90", "features": ""},
+            {"research_id": "a1", "fresh_label": "fresh_average", "fresh_at": "2026-11-25T10:00:00Z",
+             "age_days": "2", "views_per_hour": "5", "features": ""},
+            {"research_id": "stale", "fresh_label": "rising", "fresh_at": "2026-11-23T10:00:00Z",
+             "age_days": "1", "views_per_hour": "500", "features": ""},
+            {"research_id": "done", "fresh_label": "rising", "fresh_at": "2026-11-25T10:00:00Z",
+             "age_days": "1", "views_per_hour": "500", "features": "{\"a\":1}"}]
+    assert [r["research_id"] for r in researcher.pick_fresh(rows, 5, NOW)] == ["r2", "a1", "r1"]
+
+
+def test_fresh_row_upsert_keeps_settled_label():
+    ws = FakeWorksheet("Research", [TABS["Research"]])
+    sheets.upsert_rows(ws, TABS["Research"], "research_id",
+                       [{"research_id": "x", "video_id": "x", "label": "winner", "score": 5}])
+    sheets.upsert_rows(ws, TABS["Research"], "research_id",
+                       researcher.build_fresh_rows([fresh_short("x", 900, 10)] * 1, [], R, CFG, NOW))
+    rec = ws.get_all_records()[0]
+    assert rec["label"] == "winner" and str(rec["score"]) == "5" and rec["fresh_label"]

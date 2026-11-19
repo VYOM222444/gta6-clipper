@@ -17,7 +17,18 @@ Runs once a day (GitHub Actions). Three steps, each safe to re-run:
             -> `Playbook` tab rows (section research.*). Claude turns strong findings into
             PLAYBOOK.md / template changes.
 
-Run:  python -m agents.researcher [collect|analyze|findings|all]   (default all)
+Fresh tier ("what works RIGHT NOW"): the same three steps for Shorts 0-72 h old. They are
+compared by views per hour against Shorts of the same age (0-6 h vs 0-6 h ...), plus the
+channel-size bonus, and get a provisional `fresh_label` (rising / fresh_average / fresh_low /
+fresh_above). Scout's own Shorts (Candidates tab, kind=short) are added for free. Findings
+go to Playbook rows research.now.*; a "SHIFT" note marks a feature where the 72 h verdict
+differs from the 7-day one (the trend is changing). Hot topic words of rising Shorts
+(research.now.topics) are read by Scout to rank matching videos higher. The final
+winner/average label still comes from the settled (3-14 day) tier; analysed features are
+reused when a fresh Short grows old enough.
+
+Run:  python -m agents.researcher [collect|analyze|findings|fresh|all]   (default all)
+      fresh = collect + analyze + findings for the fresh tier only (afternoon run).
 Needs YOUTUBE_API_KEY, GEMINI_API_KEY, GOOGLE_SERVICE_ACCOUNT_JSON.
 """
 import json
@@ -42,6 +53,9 @@ CONTENT_TYPES = ["chaos", "reaction", "news", "secret", "tip", "other"]
 HOOKS = ["action_first", "text_question", "text_statement", "face_reaction", "voice_hook",
          "countdown_or_list", "before_after", "none"]
 SFX = ["riser", "impact", "whoosh", "record_scratch", "meme_sound", "ding", "none"]
+MUSIC = ["none", "phonk", "hype_edm", "hip_hop_rap", "epic_orchestral", "lofi_chill", "meme_song",
+         "sad_emotional", "other"]
+FRESH_LABELS = ("rising", "fresh_average")
 HASHTAG = re.compile(r"#(\w+)", re.UNICODE)
 HANDLE = re.compile(r"(?<![\w.])@([A-Za-z0-9_.\-]{3,30})")
 EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿]")
@@ -67,6 +81,8 @@ SCHEMA = {
         "screen_shake": {"type": "BOOLEAN"},
         "sound_effects": {"type": "ARRAY", "items": {"type": "STRING", "enum": SFX}},
         "background_music": {"type": "BOOLEAN"},
+        "music_type": {"type": "STRING", "enum": MUSIC},
+        "cuts_on_beat": {"type": "BOOLEAN"},
         "voiceover": {"type": "BOOLEAN"},
         "emoji_or_stickers": {"type": "BOOLEAN"},
         "loop_ending": {"type": "BOOLEAN"},
@@ -78,7 +94,7 @@ SCHEMA = {
     },
     "required": ["hook_type", "text_on_screen_first_second", "payoff_second", "caption_style",
                  "layout", "facecam", "zoom_ins", "cuts", "sound_effects", "background_music",
-                 "loop_ending", "pace", "content_type", "topic"],
+                 "music_type", "loop_ending", "pace", "content_type", "topic"],
 }
 
 PROMPT = """You are an editing analyst. Watch this YouTube Short about GTA 6 and describe HOW it is
@@ -96,6 +112,9 @@ edited, exactly as you see and hear it. Do not judge whether it is good.
 - slow_motion, freeze_frame, replay_of_moment, screen_shake: editing effects used.
 - sound_effects: added effects you hear (riser, impact, whoosh, record_scratch, meme_sound, ding),
   or ["none"]. background_music: music added under the video. voiceover: narration added.
+- music_type: style of the added music (phonk, hype_edm, hip_hop_rap, epic_orchestral,
+  lofi_chill, meme_song, sad_emotional, other) or none. Do not guess the song title.
+- cuts_on_beat: do cuts / zooms land on the music's beats?
 - emoji_or_stickers: emoji / sticker / meme images popping on screen.
 - loop_ending: the last second flows back into the first so it replays seamlessly.
 - ends_right_after_payoff: the video ends within ~2 seconds after the payoff.
@@ -205,6 +224,104 @@ def collect(yt, settings, rules, now):
     return rows, notes, len(ids)
 
 
+# --- 1b. collect (fresh tier: 0-72 h) ------------------------------------------------------------
+
+def age_bucket(age_h, edges):
+    for i, e in enumerate(edges):
+        if age_h <= e:
+            return i
+    return len(edges)
+
+
+def label_fresh(rows, fcfg, cfg):
+    """fresh_label by score percentile within the same age bucket. Buckets with fewer than
+    `min_bucket` Shorts are merged into the next older bucket."""
+    edges = fcfg.get("age_buckets_h", [6, 24, 48, 72])
+    groups = {}
+    for r in rows:
+        groups.setdefault(age_bucket(r["age_h"], edges), []).append(r)
+    merged, carry = [], []
+    for b in sorted(groups):
+        carry += groups[b]
+        if len(carry) >= fcfg.get("min_bucket", 5):
+            merged.append(carry)
+            carry = []
+    if carry:
+        if merged:
+            merged[-1] += carry
+        else:
+            merged.append(carry)
+    names = {"winner": "rising", "average": "fresh_average", "low": "fresh_low", "above": "fresh_above"}
+    for g in merged:
+        tmp = [{"score": r["score"], "_r": r} for r in g]
+        label_cohort(tmp, cfg)
+        for t in tmp:
+            t["_r"]["fresh_label"] = names[t["label"]]
+    return rows
+
+
+def build_fresh_rows(videos, channels, rules, cfg, now):
+    """Like build_rows, but for Shorts <= max_age_hours old; score uses views per hour."""
+    fcfg = cfg["fresh"]
+    out = []
+    for r in build_rows(videos, channels, rules, cfg, now):
+        age_h = (now - parse_time(r["published_at"])).total_seconds() / 3600
+        if age_h > fcfg.get("max_age_hours", 72) or age_h < fcfg.get("min_age_hours", 1):
+            continue
+        vph = r["views"] / max(age_h, 1.0)
+        subs = r["subscribers"] if r["subscribers"] != "" else None
+        bonus = short_score(r["views"], subs) - short_score(r["views"], None)
+        fresh = {k: r[k] for k in ("research_id", "video_id", "url", "views", "age_days", "length_s",
+                                   "title", "hashtags", "channel_title", "subscribers", "published_at",
+                                   "credits")}
+        fresh.update({"age_h": age_h, "views_per_hour": round(vph, 1), "fresh_at": iso(now),
+                      "score": round(math.log10(1 + vph) + bonus, 3)})
+        out.append(fresh)
+    label_fresh(out, fcfg, cfg)
+    for r in out:
+        r.pop("age_h")
+        r.pop("score")  # the settled score column stays the settled tier's
+    return out
+
+
+def scout_short_ids(candidates, now, max_age_h=72):
+    """Shorts Scout already found (free: no search quota)."""
+    out = []
+    for c in candidates:
+        t = parse_time(c.get("published_at"))
+        if c.get("kind") == "short" and t and (now - t).total_seconds() <= max_age_h * 3600:
+            out.append(c["video_id"])
+    return out
+
+
+def collect_fresh(yt, settings, rules, now, scout_ids=()):
+    cfg = settings["researcher"]
+    fcfg = cfg["fresh"]
+    after = iso(now - timedelta(hours=fcfg.get("max_age_hours", 72)))
+    ids, notes = [], []
+    for s in fcfg["searches"]:
+        try:
+            ids += yt.search_video_ids(s["q"], after, s.get("lang"), order=s.get("order", "viewCount"),
+                                       duration="short")
+        except QuotaExceeded as e:
+            notes.append(str(e))
+            break
+        except YouTubeError as e:
+            notes.append(f"fresh search '{s['q']}' failed: {e}")
+    from_search = len(set(ids))
+    ids = list(dict.fromkeys(list(ids) + list(scout_ids)))
+    videos = []
+    try:
+        videos = yt.videos(ids, parts="snippet,statistics,contentDetails") if ids else []
+        ch = {v["snippet"]["channelId"] for v in videos}
+        channels = yt.channels(ch, parts="statistics") if ch else []
+    except QuotaExceeded as e:
+        notes.append(str(e))
+        return [], notes, len(ids), from_search
+    rows = build_fresh_rows(videos, channels, rules, cfg, now)
+    return rows, notes, len(ids), from_search
+
+
 # --- 2. analyze --------------------------------------------------------------------------------
 
 def pick_to_analyze(rows, per_label):
@@ -217,6 +334,21 @@ def pick_to_analyze(rows, per_label):
         groups.append(todo[:per_label])
     out = []
     for i in range(max(len(g) for g in groups)):
+        out += [g[i] for g in groups if i < len(g)]
+    return out
+
+
+def pick_fresh(rows, per_label, now, max_age_h=72):
+    """Not-yet-analysed rising + fresh_average Shorts seen in the last run, alternating."""
+    groups = []
+    for label in FRESH_LABELS:
+        todo = [r for r in rows if r.get("fresh_label") == label and not str(r.get("features", "")).strip()
+                and parse_time(r.get("fresh_at")) and (now - parse_time(r["fresh_at"])).total_seconds()
+                <= 12 * 3600 and _f(r.get("age_days"), 99) * 24 <= max_age_h]
+        todo.sort(key=lambda r: -_f(r.get("views_per_hour")))
+        groups.append(todo[:per_label])
+    out = []
+    for i in range(max((len(g) for g in groups), default=0)):
         out += [g[i] for g in groups if i < len(g)]
     return out
 
@@ -273,13 +405,16 @@ def analyze(gem, rows, now, parallel=4, max_minutes=15, clock=time.monotonic):
 
 BOOL_FEATURES = ["text_on_screen_first_second", "has_title_label", "caption_keyword_color", "facecam",
                  "slow_motion", "freeze_frame", "replay_of_moment", "screen_shake", "background_music",
+                 "cuts_on_beat",
                  "voiceover", "emoji_or_stickers", "loop_ending", "ends_right_after_payoff"]
 NUM_FEATURES = ["payoff_second", "zoom_ins", "cuts", "length_s"]
-ENUM_FEATURES = ["hook_type", "caption_style", "caption_position", "layout", "pace", "content_type"]
+ENUM_FEATURES = ["hook_type", "caption_style", "caption_position", "layout", "pace", "content_type",
+                 "music_type"]
 SECTION = {"text_on_screen_first_second": "hook", "hook_type": "hook", "payoff_second": "hook",
            "has_title_label": "text", "caption_style": "captions", "caption_position": "captions",
            "caption_keyword_color": "captions", "layout": "framing", "facecam": "framing",
-           "length_s": "length", "content_type": "content"}
+           "length_s": "length", "content_type": "content",
+           "background_music": "sound", "music_type": "sound", "cuts_on_beat": "sound"}
 
 
 def features_of(row):
@@ -309,7 +444,10 @@ def compare(winners, average, min_diff=0.15):
     """Feature-by-feature comparison -> list of finding dicts."""
     out = []
     for k in BOOL_FEATURES:
-        w, a = _share(winners, lambda f: f.get(k) is True), _share(average, lambda f: f.get(k) is True)
+        ws_, as_ = [f for f in winners if k in f], [f for f in average if k in f]
+        if len(ws_) < 3 or len(as_) < 3:
+            continue
+        w, a = _share(ws_, lambda f: f.get(k) is True), _share(as_, lambda f: f.get(k) is True)
         out.append({"key": k, "section": SECTION.get(k, "editing"), "w": w, "a": a,
                     "verdict": _verdict(w, a, min_diff), "kind": "share"})
     for s in SFX[:-1]:
@@ -324,10 +462,13 @@ def compare(winners, average, min_diff=0.15):
             out.append({"key": k, "section": SECTION.get(k, "editing"), "w": statistics.median(wv),
                         "a": statistics.median(av), "verdict": "info", "kind": "median"})
     for k in ENUM_FEATURES:
-        vals = {f.get(k) for f in winners + average if f.get(k)}
+        ws_, as_ = [f for f in winners if f.get(k)], [f for f in average if f.get(k)]
+        if len(ws_) < 3 or len(as_) < 3:
+            continue
+        vals = {f.get(k) for f in ws_ + as_}
         for v in sorted(vals):
             test = (lambda v: lambda f: f.get(k) == v)(v)
-            w, a = _share(winners, test), _share(average, test)
+            w, a = _share(ws_, test), _share(as_, test)
             verdict = _verdict(w, a, min_diff)
             if verdict != "same" or w >= 0.4:
                 out.append({"key": f"{k}={v}", "section": SECTION.get(k, "editing"), "w": w, "a": a,
@@ -392,6 +533,26 @@ def topics_today(win_rows, analysed_feats, top=5):
             for t, c in sorted(count.items(), key=lambda x: -x[1])[:top]]
 
 
+def hot_words(win_feats, avg_feats, min_count=3, top=8):
+    """Topic words that rising Shorts use much more often than average ones -> Scout boost."""
+    def words(fs):
+        c = {}
+        for f in fs:
+            for w in set(keywords.tokens(f.get("topic", ""))):
+                if w in keywords.STOPWORDS or w in keywords.BASE_WORDS or len(w) < 3 or w.isdigit():
+                    continue
+                c[w] = c.get(w, 0) + 1
+        return c
+    cw, ca = words(win_feats), words(avg_feats)
+    out = []
+    for w, n in sorted(cw.items(), key=lambda x: -x[1]):
+        sw, sa = n / max(len(win_feats), 1), ca.get(w, 0) / max(len(avg_feats), 1)
+        if n >= min_count and sw >= 1.5 * sa + 0.05:
+            out.append({"key": f"word:{w}", "section": "topics", "w": sw, "a": sa, "verdict": "do",
+                        "kind": "share"})
+    return out[:top]
+
+
 def describe(f):
     k, w, a = f["key"], f["w"], f["a"]
     if f["kind"] == "share":
@@ -401,7 +562,51 @@ def describe(f):
     else:
         nums = f"{w} winning Shorts"
     lead = {"do": "DO", "avoid": "AVOID", "same": "no difference", "info": "info"}[f["verdict"]]
-    return f"{lead}: {k.replace('_', ' ')} ({nums})", nums
+    text = f"{lead}: {k.replace('_', ' ')} ({nums})"
+    if f.get("shift"):
+        text += f" SHIFT (7-day: {f['shift']})"
+    return text, nums
+
+
+def settled_compare(rows, cfg, now):
+    """Raw winners-vs-average comparison of the settled tier (for shift detection)."""
+    window = timedelta(days=cfg.get("window_days", 7))
+    recent = [r for r in rows if parse_time(r.get("analyzed_at")) and now - parse_time(r["analyzed_at"]) <= window]
+    fw = [features_of(r) for r in recent if r.get("label") == "winner"]
+    fa = [features_of(r) for r in recent if r.get("label") == "average"]
+    fw, fa = [f for f in fw if f], [f for f in fa if f]
+    if len(fw) < cfg.get("min_group", 8) or len(fa) < cfg.get("min_group", 8):
+        return {}
+    return {f["key"]: f["verdict"] for f in compare(fw, fa, cfg.get("min_diff", 0.15))}
+
+
+def findings_now(rows, cfg, now):
+    """Rising vs fresh_average Shorts seen in the last `window_hours` -> research.now.* rows."""
+    fcfg = cfg["fresh"]
+    window = timedelta(hours=fcfg.get("window_hours", 72))
+    recent = [r for r in rows if r.get("fresh_label") in FRESH_LABELS and parse_time(r.get("fresh_at"))
+              and now - parse_time(r["fresh_at"]) <= window and features_of(r)]
+    win = [r for r in recent if r["fresh_label"] == "rising"]
+    avg = [r for r in recent if r["fresh_label"] == "fresh_average"]
+    need = fcfg.get("min_group", 6)
+    if len(win) < need or len(avg) < need:
+        return [], f"not enough analysed fresh Shorts yet ({len(win)} rising, {len(avg)} average; need {need} each)"
+    fw, fa = [features_of(r) for r in win], [features_of(r) for r in avg]
+    min_diff = fcfg.get("min_diff", cfg.get("min_diff", 0.15))
+    out = compare(fw, fa, min_diff) + seo_findings(win, avg, min_diff) + hot_words(fw, fa)
+    old = settled_compare(rows, cfg, now)
+    for f in out:
+        prev = old.get(f["key"])
+        if prev in ("do", "avoid", "same") and f["verdict"] in ("do", "avoid", "same") \
+                and prev != f["verdict"]:
+            f["shift"] = {"do": "DO", "avoid": "AVOID", "same": "no difference"}.get(prev, prev)
+    src = f"researcher now {now.date().isoformat()} (n={len(win)} rising / {len(avg)} average, last {fcfg.get('window_hours', 72)} h)"
+    play = []
+    for f in out:
+        rule, value = describe(f)
+        play.append({"rule_id": f"research.now.{f['section']}.{f['key']}", "section": f"research.now.{f['section']}",
+                     "rule": rule, "value": value, "source": src, "updated_at": iso(now)})
+    return play, src
 
 
 def findings(rows, cfg, now):
@@ -434,8 +639,12 @@ def findings(rows, cfg, now):
 
 def main(argv=None):
     what = (argv or sys.argv[1:] or ["all"])[0]
+    settled = what in ("collect", "analyze", "findings", "all")
+    fresh = what in ("fresh", "all")
+    step = {"collect": "collect", "analyze": "analyze", "findings": "findings"}.get(what)
     settings, rules = load_settings(), load_rules()
     cfg = settings["researcher"]
+    fcfg = cfg["fresh"]
     now = datetime.now(timezone.utc)
     try:
         ss = sheets.open_sheet(sheets.get_client(), settings["sheet"]["id"])
@@ -446,7 +655,7 @@ def main(argv=None):
         print(f"RESEARCHER FAILED (sheet): {e}")
         return 1
 
-    if what in ("collect", "all"):
+    if settled and step in (None, "collect"):
         try:
             yt = YouTube(budget_units=cfg["run_budget_units"])
             rows, notes, n = collect(yt, settings, rules, now)
@@ -462,7 +671,30 @@ def main(argv=None):
         print(f"Collected {n} Shorts, {len(rows)} GTA 6 Shorts 3-{cfg['max_age_days']} days old: {by}. "
               f"Research: {new} new, {upd} updated. Quota used: {yt.used}/{yt.budget} units.")
 
-    if what in ("analyze", "all"):
+    if fresh:
+        scout_ids = []
+        try:
+            scout_ids = scout_short_ids(sheets.read_records(ss.worksheet("Candidates")), now,
+                                        fcfg.get("max_age_hours", 72))
+        except Exception as e:  # Candidates tab missing / unreadable: search only
+            print(f"note: Scout Shorts not read: {e}")
+        try:
+            yt = YouTube(budget_units=fcfg["run_budget_units"])
+            rows, notes, n, n_search = collect_fresh(yt, settings, rules, now, scout_ids)
+        except YouTubeError as e:
+            print(f"RESEARCHER FAILED (YouTube, fresh): {e}")
+            return 1
+        for note in notes:
+            print(f"note: {note}")
+        upd, new = sheets.upsert_rows(ws, TABS[TAB], "research_id", rows)
+        by = {}
+        for r in rows:
+            by[r["fresh_label"]] = by.get(r["fresh_label"], 0) + 1
+        print(f"Fresh: {n} Shorts ({n_search} from search, {len(scout_ids)} from Scout), {len(rows)} GTA 6 "
+              f"Shorts 0-{fcfg.get('max_age_hours', 72)} h old: {by}. Research: {new} new, {upd} updated. "
+              f"Quota used: {yt.used}/{yt.budget} units.")
+
+    if step in (None, "analyze"):
         gcfg = settings["gemini"]["researcher"]
         try:
             gem = Gemini(gcfg["models"], gcfg["daily_budget"], "researcher", usage=Usage(USAGE_FILE),
@@ -471,7 +703,13 @@ def main(argv=None):
         except GeminiError as e:
             print(f"RESEARCHER FAILED: {e}")
             return 1
-        todo = pick_to_analyze(sheets.read_records(ws), cfg["analyze_per_label"])
+        records = sheets.read_records(ws)
+        todo = []
+        if fresh:
+            todo += pick_fresh(records, fcfg["analyze_per_label"], now, fcfg.get("max_age_hours", 72))
+        if settled:
+            seen = {r["research_id"] for r in todo}
+            todo += [r for r in pick_to_analyze(records, cfg["analyze_per_label"]) if r["research_id"] not in seen]
         print(f"Analysing {len(todo)} Shorts blind with Gemini (calls left today: {gem.remaining()}).")
         updates, notes = analyze(gem, todo, now, gcfg.get("parallel_calls", 4), gcfg.get("max_run_minutes", 15))
         for note in notes:
@@ -480,17 +718,25 @@ def main(argv=None):
         print(f"Analysed {sum(1 for u in updates.values() if 'model' in u)}; Gemini calls this run: "
               f"{gem.calls_this_run}.")
 
-    if what in ("findings", "all"):
-        play, src = findings(sheets.read_records(ws), cfg, now)
-        if not play:
-            print(f"Findings: {src}.")
-            return 0
-        pws = ss.worksheet("Playbook")
-        sheets.upsert_rows(pws, TABS["Playbook"], "rule_id", play)
-        print(f"Findings ({src}):")
-        for p in play:
-            if p["rule"].startswith(("DO", "AVOID")) or p["section"] in ("research.today", "research.length"):
-                print(f"  {p['rule']}")
+    if step in (None, "findings"):
+        records = sheets.read_records(ws)
+        play, msgs = [], []
+        if settled:
+            p, src = findings(records, cfg, now)
+            play += p
+            msgs.append(f"7-day: {src}")
+        if fresh:
+            p, src = findings_now(records, cfg, now)
+            play += p
+            msgs.append(f"right now: {src}")
+        for m in msgs:
+            print(f"Findings {m}.")
+        if play:
+            sheets.upsert_rows(ss.worksheet("Playbook"), TABS["Playbook"], "rule_id", play)
+            for p in play:
+                if p["rule"].startswith(("DO", "AVOID")) or "SHIFT" in p["rule"] or \
+                        p["section"] in ("research.today", "research.length"):
+                    print(f"  [{p['section']}] {p['rule']}")
     return 0
 
 

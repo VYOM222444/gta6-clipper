@@ -156,7 +156,7 @@
     "max_clips_per_run": 10
   },
   "researcher": {
-    "_note": "Daily study of GTA 6 Shorts 3-14 days old: winners vs average -> Playbook tab (research.*).",
+    "_note": "Daily study of GTA 6 Shorts 3-14 days old (settled) + twice-daily fresh tier 0-72 h (what works right now): winners vs average -> Playbook tab (research.*, research.now.*).",
     "searches": [
       {
         "q": "GTA 6 #shorts"
@@ -195,7 +195,43 @@
     "analyze_per_label": 20,
     "window_days": 7,
     "min_group": 8,
-    "min_diff": 0.15
+    "min_diff": 0.15,
+    "fresh": {
+      "_note": "Shorts 0-72 h old, ranked by views/hour within the same age bucket (+ channel-size bonus). Scout's Shorts are added free. ~400 units per run.",
+      "searches": [
+        {
+          "q": "GTA 6 #shorts",
+          "order": "viewCount"
+        },
+        {
+          "q": "GTA 6 funny",
+          "order": "viewCount"
+        },
+        {
+          "q": "GTA 6",
+          "lang": "hi",
+          "order": "viewCount"
+        },
+        {
+          "q": "GTA 6 #shorts",
+          "order": "date"
+        }
+      ],
+      "min_age_hours": 1,
+      "max_age_hours": 72,
+      "age_buckets_h": [
+        6,
+        24,
+        48,
+        72
+      ],
+      "min_bucket": 5,
+      "run_budget_units": 500,
+      "analyze_per_label": 10,
+      "window_hours": 72,
+      "min_group": 6,
+      "min_diff": 0.2
+    }
   },
   "decider": {
     "_note": "Automatic evening batch (agents/decider.py).",
