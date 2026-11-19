@@ -181,3 +181,17 @@ def test_declared_language():
     assert scout.language_ok(v, sc)
     v["snippet"]["defaultAudioLanguage"] = "hi"
     assert scout.language_ok(v, sc)
+
+
+def test_hot_topic_words_from_researcher_boost_scout():
+    from agents import scout
+    now = datetime(2026, 11, 25, 12, tzinfo=timezone.utc)
+    play = [{"rule_id": "research.now.topics.word:cheetah", "updated_at": "2026-11-25T06:00:00Z"},
+            {"rule_id": "research.now.topics.word:stale", "updated_at": "2026-11-22T06:00:00Z"},
+            {"rule_id": "research.hook.loop_ending", "updated_at": "2026-11-25T06:00:00Z"}]
+    words = scout.hot_topic_words(play, now)
+    assert words == {"cheetah"}
+    assert scout.matches_topic("GTA 6 CHEETAH chase!", words)
+    assert not scout.matches_topic("GTA 6 cheetahs", words)
+    cfg = {"outlier_cap": 10, "watchlist_boost": 1.5, "campaign_boost": 2.0, "topic_boost": 1.3}
+    assert scout.score(100, None, cfg, hot_topic=True) == 130

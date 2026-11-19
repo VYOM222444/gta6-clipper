@@ -100,6 +100,9 @@ The **Playbook** (`playbook/PLAYBOOK.md` + `playbook/rules.json`) is read by eve
    Also records titles, hashtags and description styles of winners → SEO rules.
    Labels a Short winner/average/low only after it is 3–7 days old.
    *Built 2026-11-17 (`agents/researcher.py`, daily): collect -> analyze -> findings, see log.*
+   **Fresh tier** (2026-11-19): also Shorts 0-72 h old ("what works right now"), ranked by
+   views/hour vs Shorts of the same age, incl. Scout's Shorts; findings `research.now.*`
+   (SHIFT = differs from the 7-day verdict); hot topic words feed Scout's ranking.
 2. **Scout** — finds trending GTA 6 long videos, live-stream VODs and Shorts via the YouTube
    Data API. Ranks by views/hour and outlier score (views ÷ channel subscribers). Checks the
    Creator Watchlist (`config/watchlist.json`) for new uploads. Works with the Researcher via
@@ -201,9 +204,9 @@ posts/<date>.json           # links the owner posted, pushed on branch posts/<da
 lib/keywords.py             # trending phrases from Scout titles -> Keywords tab (Scout run) [L]
 agents/gatekeeper.py        # leaks, blocklist, used, duplicates, saturation -> Moments gate_status [G]
 .github/workflows/gatekeeper.yml    # started by the Watcher (chain) + manual             [G]
-agents/researcher.py        # daily: GTA 6 Shorts 3-14 d old -> Research tab; Flash-Lite blind tags; findings -> Playbook tab [R]
+agents/researcher.py        # daily: GTA 6 Shorts 3-14 d old + fresh 0-72 h -> Research tab; Flash-Lite blind tags; findings -> Playbook tab [R]
 data/gemini_usage_researcher.json # Researcher's own Gemini counter; committed by its workflow [R]
-.github/workflows/researcher.yml    # daily 01:23 UTC (06:53 IST) + manual                [R]
+.github/workflows/researcher.yml    # daily 01:23 UTC (06:53 IST, all) + 11:23 UTC (16:53 IST, fresh only) + manual [R]
 lib/gemini.py               # Gemini generateContent + YouTube windows, daily counter, model fallback [B2]
 lib/render.py               # caption chunks, keyword highlight, .ass builder, ffmpeg command, post .txt [C]
 agents/render_batch.py      # Fetcher + Renderer: approved Batch rows -> Drive mp4 + txt  [C]
@@ -265,7 +268,7 @@ Automatic (since 2026-11-17 GitHub cron is only a backup; it skipped ~half the r
   skipped if the main job really ran < 5 h ago (Watcher < 2 h, Researcher < 20 h). The
   manual "Run workflow" button and chain starts always run.
 - Watcher backup cron 12:47 UTC (18:17 IST). Researcher daily ~07:00 IST (scheduler) +
-  backup cron 01:23 UTC. Gemini: Watcher 15 Flash calls/day + 30 Flash-Lite fallback calls/day
+  backup cron 01:23 UTC; fresh-tier run 11:23 UTC (16:53 IST, cron, before the Decider). Gemini: Watcher 15 Flash calls/day + 30 Flash-Lite fallback calls/day
   (own counter `watcher:gemini-flash-lite-latest`), max 8 calls per run.
 - Decider (today's batch) ~18:00 IST (scheduler `startDecider`) + backup cron 12:53 UTC.
   5 clips per brand every day from Nov 18 (owner's choice, no ramp; optional
@@ -528,4 +531,18 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   publish_batch). Creator credit = channel name (handles not known yet). Gemini: no
   mediaResolution for text-only calls. Owner must re-paste the Apps Script and run
   installTriggers again to add startDecider. 146 tests.
-
+- 2026-11-19 (Researcher fresh tier): new mode `fresh` (also part of `all`): Shorts 0-72 h old
+  from 4 searches (`researcher.fresh.searches`, ~400 units) + Scout's own Shorts (Candidates
+  kind=short, free); score = log10(views/hour) + channel-size bonus, labelled within age
+  buckets 0-6/6-24/24-48/48-72 h (small buckets merged) -> Research `fresh_label`
+  (rising / fresh_average / fresh_low / fresh_above), `views_per_hour`, `fresh_at`; the settled
+  `label`/`score` are never touched, and analysed features are reused when the Short settles.
+  Up to 10 rising + 10 fresh_average analysed per run. Findings (last 72 h, >= 6 per group,
+  20-point difference) -> Playbook `research.now.<section>.<key>`; "SHIFT (7-day: X)" when the
+  verdict differs from the 7-day one; `research.now.topics.word:<w>` = topic words rising Shorts
+  use much more -> Scout x1.3 (`scout.topic_boost`, found_by "+hot topic"). Gemini tags now
+  include `music_type` (phonk, hype_edm, ...; never the song title) and `cuts_on_beat` (for PR 5
+  beat-sync). Decider's prompt gets the "now" SEO rules first. Workflow: second cron 11:23 UTC
+  runs job `research-fresh` (no guard; named differently so the morning guard is unaffected);
+  manual input mode=fresh. Budget: ~1,700 YouTube units/day, up to 80 Flash-Lite calls/day.
+  155 tests.

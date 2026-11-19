@@ -121,17 +121,36 @@ def campaign_scan(texts, cfg):
     return False, ""
 
 
-def score(views_per_hour, outlier, cfg, watchlist=False, campaign=False):
+def score(views_per_hour, outlier, cfg, watchlist=False, campaign=False, hot_topic=False):
     o = min(outlier or 0, cfg["outlier_cap"])
     s = views_per_hour * (1 + math.log10(1 + o))
     if watchlist:
         s *= cfg["watchlist_boost"]
     if campaign:
         s *= cfg["campaign_boost"]
+    if hot_topic:
+        s *= cfg.get("topic_boost", 1.3)
     return s
 
 
-def build_candidates(videos, channels, found_by, watch_ids, block_ids, rules, now):
+def hot_topic_words(playbook_rows, now, max_age_h=36):
+    """Topic words of Shorts rising right now (Researcher, Playbook research.now.topics)."""
+    out = set()
+    for r in playbook_rows:
+        rid = str(r.get("rule_id", ""))
+        if not rid.startswith("research.now.topics.word:"):
+            continue
+        t = parse_time(r.get("updated_at")) if r.get("updated_at") else None
+        if t and (now - t).total_seconds() <= max_age_h * 3600:
+            out.add(rid.split("word:", 1)[1].lower())
+    return out
+
+
+def matches_topic(title, words):
+    return bool(words) and bool(set(keywords.tokens(title)) & words)
+
+
+def build_candidates(videos, channels, found_by, watch_ids, block_ids, rules, now, hot_words=frozenset()):
     """Turn API items into Candidates records (dicts), best first."""
     sc = rules["scout"]
     ch_by_id = {c["id"]: c for c in channels}
@@ -180,8 +199,9 @@ def build_candidates(videos, channels, found_by, watch_ids, block_ids, rules, no
             "campaign_link": link,
             "found_at": iso(now),
             "status": status,
-            "score": round(score(vph, outlier, sc, in_watch, lead), 1),
-            "found_by": found_by.get(v["id"], ""),
+            "score": round(score(vph, outlier, sc, in_watch, lead,
+                                 matches_topic(sn.get("title", ""), hot_words)), 1),
+            "found_by": found_by.get(v["id"], "") + (" +hot topic" if matches_topic(sn.get("title", ""), hot_words) else ""),
             "updated_at": iso(now),
         })
     out.sort(key=lambda r: r["score"], reverse=True)
@@ -218,7 +238,7 @@ def collect(yt, settings, rules, watchlist, now):
     return list(found_by), found_by, notes
 
 
-def run(yt, settings, rules, watchlist, blocklist, now=None):
+def run(yt, settings, rules, watchlist, blocklist, now=None, hot_words=frozenset()):
     now = now or datetime.now(timezone.utc)
     ids, found_by, notes = collect(yt, settings, rules, watchlist, now)
     videos = yt.videos(ids) if ids else []
@@ -226,7 +246,7 @@ def run(yt, settings, rules, watchlist, blocklist, now=None):
     channels = yt.channels(ch_ids) if ch_ids else []
     watch_ids = {c["channel_id"] for c in watchlist.get("creators", [])}
     block_ids = {c if isinstance(c, str) else c.get("channel_id") for c in blocklist.get("channels", [])}
-    records = build_candidates(videos, channels, found_by, watch_ids, block_ids, rules, now)
+    records = build_candidates(videos, channels, found_by, watch_ids, block_ids, rules, now, hot_words)
     return records, notes, len(ids)
 
 
@@ -247,11 +267,24 @@ def update_keywords(ss, records, settings, now):
     return rows
 
 
+def read_hot_words(settings):
+    """Best effort: the Researcher's rising topic words (empty if the sheet can't be read)."""
+    try:
+        ss = sheets.open_sheet(sheets.get_client(), settings["sheet"]["id"])
+        return hot_topic_words(sheets.read_records(ss.worksheet("Playbook")), datetime.now(timezone.utc))
+    except Exception as e:  # never block Scout on this
+        print(f"note: hot topics not read: {e}")
+        return set()
+
+
 def main():
     settings, rules = load_settings(), load_rules()
+    hot = read_hot_words(settings)
+    if hot:
+        print(f"Hot topic words (Researcher, right now): {', '.join(sorted(hot))}")
     try:
         yt = YouTube(budget_units=settings["youtube"]["scout_run_budget_units"])
-        records, notes, n_found = run(yt, settings, rules, load_watchlist(), load_blocklist())
+        records, notes, n_found = run(yt, settings, rules, load_watchlist(), load_blocklist(), hot_words=hot)
     except YouTubeError as e:
         print(f"SCOUT FAILED (YouTube): {e}")
         return 1

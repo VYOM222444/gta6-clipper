@@ -198,7 +198,9 @@
       "agora",
       "isso"
     ],
-    "foreign_words_min": 2
+    "foreign_words_min": 2,
+    "topic_boost": 1.3,
+    "_topic_boost_note": "x score for videos whose title has a topic word of Shorts rising right now (Researcher research.now.topics, < 36 h old)."
   },
   "watcher": {
     "max_windows_per_call": 5,

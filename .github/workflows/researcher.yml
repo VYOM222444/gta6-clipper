@@ -5,15 +5,23 @@ name: Researcher
 # the Playbook tab. Also started by the external scheduler; a guard skips the run if it
 # really ran < 20 h ago. ~1,200 YouTube units, up to 45 Flash-Lite calls. Plus a manual button.
 # Saves data/gemini_usage_researcher.json (its own daily call counter) back to the repo.
+# Plus a second, smaller run at 11:23 UTC (16:53 IST, before the Decider): fresh tier only
+# (Shorts 0-72 h old, "what works right now"), ~500 units, up to 20 Flash-Lite calls. The
+# morning run also does the fresh tier.
 on:
   schedule:
     - cron: "23 1 * * *"
+    - cron: "23 11 * * *"
   workflow_dispatch:
     inputs:
       from_trigger:
         description: "Set by the external scheduler: skip if it ran recently"
         required: false
         default: ""
+      mode:
+        description: "all (settled + fresh) or fresh (0-72 h Shorts only)"
+        required: false
+        default: "all"
 
 permissions:
   contents: write
@@ -54,7 +62,7 @@ jobs:
 
   research:
     needs: guard
-    if: needs.guard.outputs.skip != 'true'
+    if: needs.guard.outputs.skip != 'true' && github.event.schedule != '23 11 * * *' && inputs.mode != 'fresh'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -70,7 +78,43 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: python -m agents.researcher
+        run: python -m agents.researcher all
+      - name: Save Gemini call counter
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/gemini_usage_researcher.json 2>/dev/null || exit 0
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "researcher: gemini usage $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push && exit 0
+            sleep 5
+          done
+          exit 1
+
+  research-fresh:
+    # Afternoon run (or manual mode=fresh): fresh tier only. No guard: cheap, and its name
+    # differs from "research", so it never makes the morning guard skip.
+    if: github.event.schedule == '23 11 * * *' || inputs.mode == 'fresh'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Study Shorts rising right now
+        env:
+          PYTHONUNBUFFERED: "1"
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m agents.researcher fresh
       - name: Save Gemini call counter
         if: always()
         run: |

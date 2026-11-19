@@ -232,8 +232,11 @@ def rising_keywords(rows, now, hours=12, top=12):
 
 
 def seo_findings(rows, top=8):
-    lines = [r.get("rule", "") for r in rows
-             if str(r.get("section", "")).startswith("research.seo") and str(r.get("rule", "")).startswith("DO")]
+    """Researcher SEO DO-rules: the "right now" (0-72 h) ones first, then the 7-day ones."""
+    def pick(prefix, label):
+        return [f"{label}{r.get('rule', '')}" for r in rows
+                if str(r.get("section", "")).startswith(prefix) and str(r.get("rule", "")).startswith("DO")]
+    lines = pick("research.now.seo", "now: ") + pick("research.seo", "")
     return "; ".join(lines[:top])
 
 
