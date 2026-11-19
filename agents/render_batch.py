@@ -80,7 +80,9 @@ def probe(path):
     d = json.loads(p.stdout)
     v = next((s for s in d["streams"] if s["codec_type"] == "video"), {})
     has_audio = any(s["codec_type"] == "audio" for s in d["streams"])
-    return int(v.get("width", 1920)), int(v.get("height", 1080)), float(d["format"]["duration"]), has_audio
+    if not v:
+        raise ValueError("source file has no video stream")
+    return int(v["width"]), int(v["height"]), float(d["format"]["duration"]), has_audio
 
 
 GPU_ERRORS = ("libcublas", "libcudnn", "cuda", "cublas", "cudnn", "ctranslate2")
@@ -205,12 +207,19 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None):
     work = Path(cfg["work_dir"])
     work.mkdir(parents=True, exist_ok=True)
     src = work / f"{row['batch_id']}.src.mp4"
-    if not src.exists():
-        p = subprocess.run(ytdlp_cmd(row, src, js_runtime), capture_output=True, text=True)
-        if p.returncode != 0 or not src.exists():
-            msg = ((p.stderr or p.stdout).strip().splitlines() or ["download failed"])[-1]
-            return {"fetch_status": f"failed: {msg[:120]}"}
-    w, h, dur, has_audio = probe(src)
+    for attempt in (1, 2):   # a cached/partial file without video is deleted and fetched again once
+        if not src.exists():
+            p = subprocess.run(ytdlp_cmd(row, src, js_runtime), capture_output=True, text=True)
+            if p.returncode != 0 or not src.exists():
+                msg = ((p.stderr or p.stdout).strip().splitlines() or ["download failed"])[-1]
+                return {"fetch_status": f"failed: {msg[:120]}"}
+        try:
+            w, h, dur, has_audio = probe(src)
+            break
+        except (ValueError, subprocess.CalledProcessError) as e:
+            src.unlink(missing_ok=True)
+            if attempt == 2:
+                return {"fetch_status": f"failed: bad download ({e})"[:140]}
     plan, used = None, src
     if ecfg and has_audio and ecfg.get("remove_music"):
         used = remove_music(src, work, ecfg)
