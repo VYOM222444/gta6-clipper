@@ -284,6 +284,8 @@ def fetch_ytdlp(video_id, is_live_vod, workdir, timeout_s):
            "--no-warnings", "--no-progress", "-o", out_tmpl]
     if os.environ.get("YTDLP_JS_RUNTIME"):
         cmd += ["--js-runtimes", os.environ["YTDLP_JS_RUNTIME"]]
+    if os.environ.get("YTDLP_COOKIES") and os.path.exists(os.environ["YTDLP_COOKIES"]):
+        cmd += ["--cookies", os.environ["YTDLP_COOKIES"]]
     if is_live_vod:
         cmd += ["--write-subs", "--sub-langs", "live_chat"]
     cmd.append(f"https://www.youtube.com/watch?v={video_id}")

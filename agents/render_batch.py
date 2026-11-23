@@ -55,8 +55,22 @@ def ytdlp_cmd(row, out_path, js_runtime=None):
            "--no-warnings", "--no-progress", "-o", str(out_path)]
     if js_runtime:
         cmd += ["--js-runtimes", js_runtime]
+    cmd += cookie_args()
     cmd.append(f"https://www.youtube.com/watch?v={row['video_id']}")
     return cmd
+
+
+BOT_CHECK = "confirm you"   # "Sign in to confirm you're not a bot"
+
+
+def cookie_args():
+    """--cookies <file> when YTDLP_COOKIES points to an existing cookies.txt (Colab copies it from Drive)."""
+    path = os.environ.get("YTDLP_COOKIES", "")
+    return ["--cookies", path] if path and os.path.exists(path) else []
+
+
+def is_bot_block(text):
+    return BOT_CHECK in (text or "") and "bot" in (text or "")
 
 
 def output_paths(output_dir, row, day):
@@ -212,6 +226,8 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None):
             p = subprocess.run(ytdlp_cmd(row, src, js_runtime), capture_output=True, text=True)
             if p.returncode != 0 or not src.exists():
                 msg = ((p.stderr or p.stdout).strip().splitlines() or ["download failed"])[-1]
+                if is_bot_block(msg):
+                    return {"blocked": True}
                 return {"fetch_status": f"failed: {msg[:120]}"}
         try:
             w, h, dur, has_audio = probe(src)
@@ -308,6 +324,11 @@ def main():
             result = {"render_status": f"failed: {type(e).__name__}: {str(e)[:100]}"}
             if (Path(cfg["work_dir"]) / f"{row['batch_id']}.src.mp4").exists():
                 result["fetch_status"] = "done"
+        if result.get("blocked"):   # YouTube's bot check: nothing is marked failed, retried next run
+            print("STOPPED: YouTube asks Colab to 'sign in to confirm you're not a bot'.\n"
+                  "  Fix: Runtime > Disconnect and delete runtime, then Run all (new IP).\n"
+                  "  If it keeps happening: put cookies.txt in Drive/GTA6 Clipper (see CLAUDE.md).")
+            break
         sheets.set_values(ws, headers, "batch_id", {row["batch_id"]: result})
         if result.get("render_status") == "done":
             ok += 1
