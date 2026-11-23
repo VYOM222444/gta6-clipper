@@ -590,3 +590,10 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   stream (probably only audio formats offered to yt-dlp for that video; -01 is refused outright).
   yt-dlp FORMAT now requires a video stream in every fallback, and on this failure the run prints
   how many video formats yt-dlp sees + its last message. Owner: skip clips that keep failing.
+- 2026-11-23 (YouTube bot check in Colab): render run failed on all 3 clips with "Sign in to confirm
+  you're not a bot" (YouTube now blocks Colab's IP too, sometimes). render_batch stops at the first
+  bot block without marking anything failed (retried next run) and tells the owner to restart the
+  runtime (new IP). Optional cookies: if Drive `GTA6 Clipper/cookies.txt` exists, both notebooks copy
+  it and yt-dlp uses `--cookies` (export from a SPARE Google account, never the brand channels'
+  account; the file is a login, never commit or share it). Render notebook MAX_CLIPS back to 0.
+  167 tests. Clip 2026-11-18-04 had no video stream earlier; -01/-04 should be set approved=no.

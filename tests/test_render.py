@@ -191,3 +191,16 @@ def test_is_gpu_error():
 
 def test_preload_cuda_libs_never_raises():
     assert isinstance(render_batch.preload_cuda_libs(), list)
+
+
+def test_cookies_and_bot_block(tmp_path, monkeypatch):
+    from agents import render_batch as rb
+    row = {"start_s": "1", "end_s": "9", "video_id": "abc"}
+    monkeypatch.delenv("YTDLP_COOKIES", raising=False)
+    assert "--cookies" not in rb.ytdlp_cmd(row, "o.mp4")
+    c = tmp_path / "cookies.txt"; c.write_text("x")
+    monkeypatch.setenv("YTDLP_COOKIES", str(c))
+    cmd = rb.ytdlp_cmd(row, "o.mp4")
+    assert cmd[cmd.index("--cookies") + 1] == str(c)
+    assert rb.is_bot_block("ERROR: [youtube] x: Sign in to confirm you’re not a bot.")
+    assert not rb.is_bot_block("ERROR: ffmpeg exited with code 222")
