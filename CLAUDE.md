@@ -40,8 +40,8 @@ Principle: lean build-measure-learn. Ship the smallest working version first, th
 ## 3. Channels (brands)
 
 All content is clipped from other creators. One clip goes to exactly ONE brand, which posts
-it on its YouTube + Instagram + Facebook (Facebook: Instagram auto-share for now; Meta API
-with the Instagram auto-post). Never the same clip on two brands.
+it on its YouTube (owner uploads) + Instagram + Facebook (auto-posted via the Meta API by
+`agents/post_social.py` once set up). Never the same clip on two brands.
 
 | Brand | key | YouTube handle | Instagram |
 |---|---|---|---|
@@ -225,6 +225,10 @@ tools/apps_script_trigger.gs        # Google Apps Script: reliable 6-hourly / da
 .github/workflows/publish-batch.yml # on push to batch/** branches                        [B2]
 .github/workflows/log-posts.yml     # on posts/** pushes (main or posts/** branches)      [P]
 .github/workflows/tests.yml         # runs pytest on every PR / push to main              [S1]
+.github/workflows/social.yml        # started by Tracker + manual (dry run); Instagram + Facebook posts [IG]
+agents/post_social.py       # rendered Batch rows -> Instagram Reel + Facebook Page Reel after veto window [IG]
+lib/experiments.py          # our posts with vs without each skill -> Playbook experiments.*  [X]
+LiveChat tab                # live chat reactions per 10 s, written by Apps Script pollLive  [Live]
 tests/                              # pytest; tests/fakes.py = in-memory sheet fakes      [S1]
 ```
 
@@ -311,10 +315,6 @@ hand; normally `agents/decider.py` does this automatically):**
    writes the Batch tab; check its log for REJECTED lines and fix them.
 6. Clips are auto-approved; tell the owner the batch is in and to run the Colab render.
 
-**Logging posts:** YouTube posts are found automatically every 6 h (Tracker workflow ->
-`log_posts stats` -> discover: our 5 channels' uploads matched to Batch rows by title, so keep
-the title from the .txt). Only Instagram links (or a YouTube post whose title was changed a lot)
-need pasting. **When the owner pastes post links:** write `posts/<YYYY-MM-DD>.json`
 **Instagram + Facebook auto-post setup (once, on the laptop, ~30-40 min; `agents/post_social.py`):**
 1. Each brand's Instagram: Settings > Account type and tools > Switch to professional (Creator or
    Business). Turn OFF "share reels to Facebook" (the API posts to Facebook itself).
@@ -335,7 +335,10 @@ need pasting. **When the owner pastes post links:** write `posts/<YYYY-MM-DD>.js
 8. Google Drive: share the "GTA6 Clipper" folder with the service account email as Viewer.
 9. Actions > Social post > Run workflow with "dry run" ticked: the log lists what would post.
 
-**Logging posts (when the owner pastes post links):** write `posts/<YYYY-MM-DD>.json`
+**Logging posts:** YouTube posts are found automatically every 6 h (Tracker workflow ->
+`log_posts stats` -> discover: our 5 channels' uploads matched to Batch rows by title, so keep
+the title from the .txt). Only Instagram links (or a YouTube post whose title was changed a lot)
+need pasting. **When the owner pastes post links:** write `posts/<YYYY-MM-DD>.json`
 (format in `agents/log_posts.py`; one entry per clip per platform, URLs without tracking
 params), commit on branch `posts/<YYYY-MM-DD>` from main, push. The Log posts workflow
 fills the Posted tab; the Tracker workflow refreshes YouTube views of our posts every
