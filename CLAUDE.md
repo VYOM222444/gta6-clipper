@@ -663,3 +663,11 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   `split`; full-screen clips always follow the action (tag `follow`). Any reframe/zoom failure ->
   plain centre-crop retry. Needs OpenCV (preinstalled in Colab; env CLIPPER_HAAR_XML overrides the
   model path). Built on the shake/freeze branch (PR #33). 188 tests.
+- 2026-11-24 (Examples tab): owner wants the system to hand him real viral Shorts per editing
+  style, which he screen-records and sends to Claude in chat to build skills from. `lib/examples.py`
+  + new sheet tab `Examples` (Researcher findings step, every run): "TOP breakouts (any style)"
+  (10) + 3 per editing trick in lib/skills.SKILLS, from 7-day winners + rising fresh Shorts, ranked by
+  breakout then views; columns url, title, channel, views, breakout, age, have_skill (can we do it
+  yet), style (summary of its Gemini tags). Fixed slots `<category>#<rank>` overwritten each run.
+  Workflow: owner picks examples -> screen recording to chat -> Claude studies frames -> sample ->
+  owner approves -> skill PR (experiment). 183 tests.

@@ -49,6 +49,11 @@ TABS = {
         "phrase", "score", "videos", "prev_score", "trend", "example_title",
         "first_seen", "updated_at",
     ],
+    # Winning Shorts to copy a style from, per editing trick (Researcher, lib/examples.py).
+    "Examples": [
+        "example_id", "category", "rank", "have_skill", "url", "title", "channel_title", "views",
+        "breakout", "age_days", "style", "updated_at",
+    ],
     # Researcher notes on top/average GTA Shorts.
     "Research": [
         "research_id", "video_id", "url", "label", "views", "age_days", "hook_type",
