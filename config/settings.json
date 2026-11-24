@@ -324,5 +324,10 @@
     },
     "age_penalty_per_hour": 0.03,
     "partly_clipped_penalty": 0.5
+  },
+  "posts": {
+    "auto_discover": true,
+    "uploads_per_channel": 50,
+    "match_min": 0.75
   }
 }

@@ -146,6 +146,12 @@ class YouTube:
             out.append((sn.get("textDisplay", ""), int(sn.get("likeCount", 0) or 0)))
         return out
 
+    def channel_id_for_handle(self, handle):
+        """'@handle' -> 'UC...' channel id, or '' if no such channel. 1 unit."""
+        data = self._call("channels", {"part": "id", "forHandle": handle if handle.startswith("@") else "@" + handle})
+        items = data.get("items", [])
+        return items[0]["id"] if items else ""
+
     def recent_uploads(self, channel_id, max_results=10):
         """Latest uploads of a channel via its uploads playlist (UC... -> UU...)."""
         if not channel_id.startswith("UC"):

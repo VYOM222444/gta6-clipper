@@ -65,3 +65,23 @@ def test_log_then_stats_end_to_end(tmp_path):
     log_posts.log(ws, [], [str(REPO_ROOT / "posts" / "2026-11-16.json")])
     row = next(r for r in ws.get_all_records() if r["post_id"] == "2026-11-16-05-youtube")
     assert row["views_now"] == 1234
+
+
+def test_match_uploads_by_title():
+    from agents.log_posts import match_uploads
+    batch = [{"batch_id": "2026-11-24-01", "brand": "wasted_again", "title": "GTA 6 cop chase ends in a lake",
+              "moment_id": "m1"},
+             {"batch_id": "2026-11-24-02", "brand": "wasted_again", "title": "GTA 6 bike crash off the pier",
+              "moment_id": "m2"},
+             {"batch_id": "2026-11-24-03", "brand": "neon_wanted", "title": "GTA 6 cop chase ends in a lake"}]
+    uploads = [{"id": "AAAAAAAAAAA", "snippet": {"title": "GTA 6 Cop Chase Ends In A Lake 😂 #shorts",
+                                                 "publishedAt": "2026-11-24T15:00:00Z"}},
+               {"id": "BBBBBBBBBBB", "snippet": {"title": "my channel trailer", "publishedAt": "2026-11-24T15:00:00Z"}},
+               {"id": "CCCCCCCCCCC", "snippet": {"title": "GTA 6 bike crash off the pier",
+                                                 "publishedAt": "2026-11-20T15:00:00Z"}}]  # before batch day
+    rows = match_uploads(uploads, batch, "wasted_again", [])
+    assert [(r["batch_id"], r["platform_id"]) for r in rows] == [("2026-11-24-01", "AAAAAAAAAAA")]
+    assert rows[0]["post_id"] == "2026-11-24-01-youtube" and rows[0]["moment_id"] == "m1"
+    # already logged -> nothing new
+    assert match_uploads(uploads, batch, "wasted_again", [{"platform": "youtube", "batch_id": "2026-11-24-01",
+                                                           "platform_id": "AAAAAAAAAAA"}]) == []

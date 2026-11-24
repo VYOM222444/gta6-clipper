@@ -307,7 +307,10 @@ hand; normally `agents/decider.py` does this automatically):**
    writes the Batch tab; check its log for REJECTED lines and fix them.
 6. Clips are auto-approved; tell the owner the batch is in and to run the Colab render.
 
-**Logging posts (when the owner pastes post links):** write `posts/<YYYY-MM-DD>.json`
+**Logging posts:** YouTube posts are found automatically every 6 h (Tracker workflow ->
+`log_posts stats` -> discover: our 5 channels' uploads matched to Batch rows by title, so keep
+the title from the .txt). Only Instagram links (or a YouTube post whose title was changed a lot)
+need pasting. **When the owner pastes post links:** write `posts/<YYYY-MM-DD>.json`
 (format in `agents/log_posts.py`; one entry per clip per platform, URLs without tracking
 params), commit on branch `posts/<YYYY-MM-DD>` from main, push. The Log posts workflow
 fills the Posted tab; the Tracker workflow refreshes YouTube views of our posts every
@@ -693,3 +696,8 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   decide); BETTER/WORSE at >= 1.3x either way, "LOOKS ..." + "(early, few posts)" until >= 10 per
   side. -> Playbook `experiments.<skill>` rows + log. Needs posted links logged (posts/*.json);
   Instagram has no stats yet. 197 tests.
+- 2026-11-24 (auto-log YouTube posts): `log_posts discover` (runs inside `stats`, i.e. every
+  Tracker run, and in `all`): each brand's handle -> channel id (channels forHandle) -> latest 50
+  uploads -> matched to that brand's unlogged Batch rows by normalised title (difflib >= 0.75,
+  hashtags/emoji ignored, not before the batch day) -> Posted rows `<batch_id>-youtube`. ~15
+  units/run. Owner no longer pastes YouTube links; Instagram still by hand until the Meta API.
