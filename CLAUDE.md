@@ -597,3 +597,19 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   it and yt-dlp uses `--cookies` (export from a SPARE Google account, never the brand channels'
   account; the file is a login, never commit or share it). Render notebook MAX_CLIPS back to 0.
   167 tests. Clip 2026-11-18-04 had no video stream earlier; -01/-04 should be set approved=no.
+- 2026-11-24 (style from winners): owner: no fixed template; every element only if winners use it;
+  captions were missing in the Colab clips and text looked boring; hooks were weak. `lib/style.py`:
+  the Researcher's findings step writes Playbook `style.*` rows from 7-day winners + rising fresh
+  Shorts vs average: title_label / hook_text / caption_keyword_color on if >= 50% of winners use it
+  (or >= 30% and 15 points more than average); captions judged only on winners WITH speech (none /
+  word_by_word / phrase, position = most common); layout = most common (fill = centre crop, blur,
+  black); hook_kind + hook_words + `style.hook_examples` (real winning hook texts). Not enough data
+  -> `settings.render.style_defaults`. New Gemini tags: `hook_text_on_screen` (exact text),
+  `hook_text_kind` (question/bold_claim/reaction/warning/number_or_list/pov/none). Renderer prints
+  "Style (from winners)" with the reasons; captions pop in (scale bounce), one line only (font
+  shrinks to fit, WrapStyle 2); hook pops too; label/hook/captions hidden when winners don't use
+  them; template_version gets "|<style tag>". Decider prompt: hook must be specific to the clip,
+  in the winning hook kind, with winning examples. Debug: each clip saves a 540px frame (middle of
+  the first caption) + its .ass to Drive `GTA6 Clipper/_debug/<day>/` (Claude can read these via
+  the Drive connector). Captions-missing cause still unknown (local renders show them): check the
+  _debug frame of the next run. 174 tests.
