@@ -70,7 +70,13 @@
     "comments_after_seconds": 25,
     "recheck_max_age_hours": 48,
     "recheck_every_hours": 6,
-    "api_videos_per_run": 12
+    "api_videos_per_run": 12,
+    "loudness_enabled": true,
+    "loudness_context_seconds": 30,
+    "loudness_max_peaks": 10,
+    "loudness_lead_seconds": 20,
+    "loudness_tail_seconds": 10,
+    "loudness_timeout_seconds": 300
   },
   "clip_length_seconds": {
     "chaos": [
