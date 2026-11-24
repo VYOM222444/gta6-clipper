@@ -26,7 +26,7 @@ SKILLS = {
     "screen_shake": ("screen shake", lambda f: f.get("screen_shake") is True, True),      # experiment
     "freeze_frame": ("freeze frame", lambda f: f.get("freeze_frame") is True, True),      # experiment
     # not built yet
-    "split_screen_facecam": ("split-screen facecam", lambda f: f.get("layout") == "split_screen_facecam", False),
+    "split_screen_facecam": ("split-screen facecam", lambda f: f.get("layout") == "split_screen_facecam", True),  # experiment
     "slow_motion": ("slow motion inside the clip", lambda f: f.get("slow_motion") is True, False),
     "emoji_or_stickers": ("emoji / sticker pop-ups", lambda f: f.get("emoji_or_stickers") is True, False),
     "loop_ending": ("loop ending", lambda f: f.get("loop_ending") is True, False),

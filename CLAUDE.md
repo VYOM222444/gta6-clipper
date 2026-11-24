@@ -650,3 +650,16 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   basic filters) and freeze frame (payoff frame held 0.6 s with silence; impact on the freeze; later
   whooshes/impacts shifted). Both 50%. lib/skills.py marks them have=True. Sample rendered (test
   pattern) and sent to the owner for review before merge. 181 tests.
+- 2026-11-24 (smart crop + split-screen): owner sent a real screen recording (Techno Gamerz bike
+  crash) and asked to test in chat; the full-screen centre crop cut off the crash and the facecam.
+  `lib/reframe.py`: small grayscale frames via ffmpeg (no new deps); action path = frame-difference
+  column centroid every 0.25 s (facecam excluded), median-smoothed, speed-limited (0.3 width/s) ->
+  crop x as a flat piecewise-linear ffmpeg expression (no nested if; old-ffmpeg safe). Facecam =
+  OpenCV Haar face in the same off-centre spot in >= 50% of 8 sampled frames; webcam box from the
+  overlay's sharp edges in the AVERAGE frame (fallback 16:9 ~4 face widths). Verified on the real
+  clip (box matched the webcam exactly). Layout `split` (facecam band on top, 25-42% of height,
+  gameplay below following the action, hook on the seam, credit/bottom captions inside gameplay)
+  is an experiment on 50% of clips WITH a facecam (`settings.render.reframe.split_share`), tag
+  `split`; full-screen clips always follow the action (tag `follow`). Any reframe/zoom failure ->
+  plain centre-crop retry. Needs OpenCV (preinstalled in Colab; env CLIPPER_HAAR_XML overrides the
+  model path). Built on the shake/freeze branch (PR #33). 188 tests.

@@ -192,6 +192,18 @@
       "caption_position": "middle",
       "caption_keyword_color": false,
       "layout": "blur"
+    },
+    "reframe": {
+      "_note": "lib/reframe.py: full-screen crops follow the action; clips with a streamer facecam get a split-screen (facecam on top) on split_share of clips (experiment, tag 'split'). Needs OpenCV (preinstalled in Colab).",
+      "enabled": true,
+      "split_share": 0.5,
+      "facecam": true,
+      "face_samples": 8,
+      "motion_fps": 4,
+      "motion_width": 320,
+      "min_motion": 2.0,
+      "max_speed": 0.3,
+      "smooth_window": 5
     }
   },
   "researcher": {
