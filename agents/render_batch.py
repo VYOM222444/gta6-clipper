@@ -21,6 +21,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from lib import reframe
 from lib import style as clip_style
 from lib import edits, render, sheets
 from lib.config import load_rules, load_settings
@@ -286,6 +287,17 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
     tpl = render.load_template(row["brand"])
     if style and style.get("layout"):
         tpl["layout"] = style["layout"]
+    rf, rf_tags = None, []
+    rcfg = cfg.get("reframe") or {}
+    if rcfg.get("enabled") and w > h:
+        rf = reframe.analyze(used, dur, rcfg)
+        if rf["facecam"] and edits.experiment_flags({}, row["batch_id"], {"split": rcfg.get("split_share", 0.5)})["split"]:
+            tpl["layout"] = "split"
+            tpl["split_cam_h"] = render.split_cam_h(rf["facecam"], w, h)
+            rf_tags.append("split")
+        if tpl.get("layout") in ("fill", "split") and rf["path"]:
+            rf_tags.append("follow")
+        print(f"  {row['batch_id']}: facecam={'yes' if rf['facecam'] else 'no'}, layout={tpl.get('layout')}")
     chunks = render.chunk_words(words, tpl["caption"]["max_words"], tpl["caption"]["pause_split"])
     ass_path = work / f"{row['batch_id']}.ass"
     ass_path.write_text(render.build_ass(tpl, chunks, row.get("title_label", ""), row.get("hook_text", ""),
@@ -295,11 +307,17 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
     tmp = work / f"{row['batch_id']}.out.mp4"
     end = plan["end"] if plan else dur
     zoom = (plan["zooms"], ecfg.get("zoom_amount", 0.12)) if plan and plan["zooms"] else None
-    p = subprocess.run(render.ffmpeg_cmd(used, ass_path, cfg["fonts_dir"], tmp, tpl, w, h, end, has_audio, zoom),
-                       capture_output=True, text=True)
-    if p.returncode != 0 and zoom:   # never lose a clip over a zoom: retry plain
-        print(f"  note: zoom failed, retrying without it ({p.stderr.strip()[:200]})")
-        plan["zooms"] = []
+    p = subprocess.run(render.ffmpeg_cmd(used, ass_path, cfg["fonts_dir"], tmp, tpl, w, h, end, has_audio, zoom,
+                                         rf), capture_output=True, text=True)
+    if p.returncode != 0 and (zoom or rf):   # never lose a clip over a zoom or reframe: retry plain
+        print(f"  note: zoom/reframe failed, retrying plain ({p.stderr.strip()[:200]})")
+        if plan:
+            plan["zooms"] = []
+        if tpl.get("layout") == "split":
+            tpl["layout"] = (style or {}).get("layout", "fill")
+            ass_path.write_text(render.build_ass(tpl, chunks, row.get("title_label", ""), row.get("hook_text", ""),
+                                                 row.get("creator_credit", ""), dur, w, h, style), encoding="utf-8")
+        rf_tags = []
         p = subprocess.run(render.ffmpeg_cmd(used, ass_path, cfg["fonts_dir"], tmp, tpl, w, h, end, has_audio),
                            capture_output=True, text=True)
     if p.returncode != 0:
@@ -317,6 +335,7 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
                 print(f"  note: effects pass failed, plain clip kept ({p2.stderr.strip()[-100:]})")
                 plan["replay"], plan["impacts"], plan["whooshes"] = None, [], []
         edit_tags = edits.tags(plan, bool(ecfg.get("remove_music")) and used != src)
+    edit_tags += rf_tags
     save_preview(tmp, ass_path, chunks, cfg, row, day)
     shutil.move(str(tmp), str(mp4))  # Drive is a different disk: move, not rename
     txt.write_text(render.post_text(row), encoding="utf-8")

@@ -119,6 +119,9 @@ def mask_words(words, bad):
 def layout_boxes(src_w, src_h, tpl):
     """Where the foreground video sits on the canvas: (fg_w, fg_h, top_y).
     tpl['layout'] == 'fill' (or a vertical source) fills the whole canvas (centre crop)."""
+    if tpl.get("layout") == "split" and tpl.get("split_cam_h"):
+        ch = int(tpl["split_cam_h"])
+        return W, H - ch, ch                       # facecam on top, gameplay below
     if src_h > src_w or tpl.get("layout") == "fill":
         return W, H, 0
     zoom = tpl.get("fg_zoom", 1.0) if tpl.get("layout") != "black" else 1.0
@@ -126,6 +129,13 @@ def layout_boxes(src_w, src_h, tpl):
     fg_h = int(round(scaled_w * src_h / src_w / 2) * 2)
     fg_h = min(fg_h, H)
     return W, fg_h, (H - fg_h) // 2
+
+
+def split_cam_h(facecam, src_w, src_h, lo=0.25, hi=0.42):
+    """Height of the facecam band on top of a split-screen (keeps the webcam's shape, clamped)."""
+    fx, fy, fw, fh = facecam
+    ar = (fw * src_w) / max(fh * src_h, 1)
+    return int(round(min(max(W / ar, lo * H), hi * H) / 2) * 2)
 
 
 DEFAULT_STYLE = {"title_label": True, "hook_text": True, "captions": "phrase", "caption_position": "bottom",
@@ -180,12 +190,19 @@ def build_ass(tpl, chunks, title_label, hook_text, credit, duration, src_w=1920,
     lab, hk, cap, cr = tpl["label"], tpl["hook"], tpl["caption"], tpl["credit"]
     _, fg_h, top = layout_boxes(src_w, src_h, tpl)
     vertical = top == 0
+    split = tpl.get("layout") == "split" and bool(top)
     label_y = lab["y"] if not vertical else 300
     cap_y = caption_y(st.get("caption_position", "bottom"), fg_h, top, cap["size"])
     credit_y = top + fg_h + 28 if not vertical else SAFE_BOTTOM - 40
+    if split:   # gameplay reaches the bottom: credit and bottom captions sit inside it
+        credit_y = SAFE_BOTTOM - 40
+        if st.get("caption_position", "bottom") == "bottom":
+            cap_y = SAFE_BOTTOM - 150
     # hook sits ABOVE the gameplay (or high up on a full-screen clip), never on the payoff
     hook_y = hk.get("y", 250) if not vertical else hk.get("y_vertical", 480)
-    if not st.get("title_label") and not vertical:
+    if split:
+        hook_y = top                            # on the seam between facecam and gameplay
+    elif not st.get("title_label") and not vertical:
         hook_y = max(hook_y, top - int(hk["size"] * 0.9))
 
     head = f"""[Script Info]
@@ -233,19 +250,42 @@ def _filter_path(p):
     return str(p).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
 
 
-def ffmpeg_cmd(src, ass_path, fonts_dir, out, tpl, src_w, src_h, duration, has_audio=True, zoom=None):
-    """zoom: optional (times, amount): punch-in zooms on the gameplay (lib/edits.zoom_chain)."""
+def _follow_crop(path, src_w, src_h, out_h):
+    """crop filter that follows the action (lib/reframe path) after scaling the source to out_h."""
+    from lib.reframe import crop_x_expr
+    sw = int(round(src_w * out_h / src_h / 2) * 2)
+    expr = crop_x_expr(path, sw, W) if path and src_w > src_h else None
+    x = f":x='{expr}'" if expr else ""
+    return f"scale=-2:{out_h},crop={W}:{out_h}{x}:y=0" if expr else \
+        f"scale={W}:{out_h}:force_original_aspect_ratio=increase,crop={W}:{out_h}"
+
+
+def ffmpeg_cmd(src, ass_path, fonts_dir, out, tpl, src_w, src_h, duration, has_audio=True, zoom=None,
+               reframe=None):
+    """zoom: optional (times, amount): punch-in zooms on the gameplay (lib/edits.zoom_chain).
+    reframe: optional {"path": [(t, cx)], "facecam": (x, y, w, h) fractions} from lib/reframe:
+    full-screen crops follow the action; layout 'split' puts the facecam on top."""
     from lib.edits import zoom_chain
     fg_w, fg_h, top = layout_boxes(src_w, src_h, tpl)
     ass = f"ass='{_filter_path(ass_path)}':fontsdir='{_filter_path(fonts_dir)}'"
-    if top == 0:
+    path = (reframe or {}).get("path") or None
+    cam = (reframe or {}).get("facecam")
+    if tpl.get("layout") == "split" and cam and top:
+        fx, fy, fw, fh = cam
+        zc = zoom_chain("g0", "g", zoom[0], W, fg_h, zoom[1]) if zoom and zoom[0] else ""
+        vf = (f"[0:v]fps=30,split=2[c0][p0];"
+              f"[c0]crop=iw*{fw:.4f}:ih*{fh:.4f}:iw*{fx:.4f}:ih*{fy:.4f},"
+              f"scale={W}:{top}:force_original_aspect_ratio=increase,crop={W}:{top},setsar=1[cam];"
+              f"[p0]{_follow_crop(path, src_w, src_h, fg_h)},setsar=1[g0];"
+              + (f"{zc};" if zc else "[g0]null[g];") +
+              f"[cam][g]vstack=inputs=2,setsar=1,{ass}[v]")
+    elif top == 0:
+        crop = _follow_crop(path, src_w, src_h, H)
         zc = zoom_chain("g0", "g", zoom[0], W, H, zoom[1]) if zoom and zoom[0] else ""
         if zc:
-            vf = (f"[0:v]fps=30,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}[g0];"
-                  f"{zc};[g]setsar=1,{ass}[v]")
+            vf = f"[0:v]fps=30,{crop}[g0];{zc};[g]setsar=1,{ass}[v]"
         else:
-            vf = (f"[0:v]fps=30,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
-                  f"setsar=1,{ass}[v]")
+            vf = f"[0:v]fps=30,{crop},setsar=1,{ass}[v]"
     else:
         zoom_w = W if tpl.get("layout") == "black" else int(round(W * tpl.get("fg_zoom", 1.0) / 2) * 2)
         vf = (f"[0:v]fps=30,split=2[a][b];"
