@@ -39,9 +39,15 @@
         "lang": "en",
         "event_type": "completed",
         "_note": "finished live streams (chat replay)"
+      },
+      {
+        "q": "GTA 6",
+        "lang": "en",
+        "event_type": "live",
+        "_note": "streams live right now: the Apps Script counts their chat live (pollLive)"
       }
     ],
-    "scout_run_budget_units": 1200,
+    "scout_run_budget_units": 1300,
     "tracker_run_budget_units": 200,
     "_quota_note": "Scout: 7 searches x 100 + ~20 list calls per run, 4 runs/day = ~2,900 units. Tracker: ~1 unit per 50 videos per run.",
     "signals_run_budget_units": 50,

@@ -286,6 +286,10 @@ Owner: evening Colab render (~19:00+) + YouTube uploads; morning Colab signals (
 4. Back in the editor, choose `installTriggers` > Run > allow access (Google warns that the
    app is unverified: Advanced > Go to project). Then run `startPipeline` once: the log
    must say `scout.yml: HTTP 204 (started)`.
+5. Live-stream mode (optional, same project): paste the new `tools/apps_script_trigger.gs`, add
+   Script property `YT_API_KEY` = the YouTube API key (Google Cloud > Credentials; never in chat),
+   run `installTriggers` again (adds pollLive every 5 min), then run `pollLive` once: the log says
+   "No GTA 6 stream live right now" or counts messages per stream.
 
 **Manual Decider procedure (Claude in chat, only when the owner asks to make or fix a batch by
 hand; normally `agents/decider.py` does this automatically):**
@@ -718,3 +722,17 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   grouped within 5 s, top 10 -> windows 20 s before to 10 s after, signal `loud`. Merged with
   comments/Most Replayed like the others (2 signals agreeing x1.5). Audio file deleted after.
   Tested on synthetic audio with two bursts. rules.signals.loudness_*.
+- 2026-11-24 (live-stream mode): Scout gets an 8th search `eventType=live` (streams live now ->
+  Candidates kind=live_now). Apps Script `pollLive` (every 5 min, free, owner's Google account):
+  top 3 live_now candidates by score -> videos.list (activeLiveChatId) -> liveChatMessages.list
+  (5 units, up to 3 pages of 2,000 per poll, page token kept in Script Properties) -> messages and
+  reactions (same word list as rules.json, a test keeps them equal) per 10 s since actualStartTime
+  -> `LiveChat` tab (one row per video+bin, added up). Live-mode quota cap 2,500 units/day
+  (Script Properties counter). When the chat ends: Candidates kind -> live_vod and Signals is
+  dispatched (if GH_TOKEN is set) -> Watcher -> Gatekeeper, so a stream's best moments are
+  Moments minutes after it ends, without Colab. Signals (api and full) use LiveChat counts as the
+  chat signal when there's no yt-dlp chat (`live_chat_counts` -> `spikes_from_counts`, same spike
+  rule) and handle those videos first; loudness is skipped for them. Tested pollLive in node with
+  fake Google services. Built on the loudness PR (#41). 197 tests.
+  Note: YouTube's quota page now lists search.list with its own bucket of 100 calls/day (1 unit
+  each); Scout (8 x 4 runs) + Researcher + Gatekeeper stay under it, but don't add many searches.
