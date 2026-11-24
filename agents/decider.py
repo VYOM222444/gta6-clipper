@@ -32,6 +32,7 @@ from lib.schema import TABS
 IST = ZoneInfo("Asia/Kolkata")
 USAGE_FILE = REPO_ROOT / "data" / "gemini_usage_decider.json"
 TAG_RE = re.compile(r"[^0-9A-Za-z]")
+HANDLE_RE = re.compile(r"@[A-Za-z0-9._-]{3,30}")
 
 SCHEMA = {
     "type": "OBJECT",
@@ -186,7 +187,9 @@ def _cut(text, n):
 def finish_clip(m, text, rules):
     """Turn Gemini's (or fallback) text into a valid batch clip."""
     pk, hk, tl = rules["packaging"], rules["hook"], rules["title_label"]
-    credit = (m.get("channel_title") or "the creator").strip()
+    name = (m.get("channel_title") or "the creator").strip()
+    handle = str(m.get("_handle") or "").strip()
+    credit = handle if HANDLE_RE.fullmatch(handle) else name  # @handle links to the channel on YouTube
     hook = " ".join(str(text.get("hook_text", "")).replace("#", "").split()[:hk["max_words"]])
     label_words = str(text.get("title_label", "")).upper().split()[:tl["max_words"]]
     while len(label_words) < tl["min_words"]:
@@ -202,9 +205,11 @@ def finish_clip(m, text, rules):
             topic.append(t)
     hashtags = " ".join(pk["base_hashtags"] + topic[:2])
     line1 = _cut(text.get("what_happens") or m.get("reason", ""), 150)
-    description = f"{line1}\n🎥 Clip from {credit}\n{pk['disclaimer']}"
+    who = f"{credit} ({name})" if credit != name else credit
+    description = f"{line1}\n🎥 Clip from {who}\n{pk['disclaimer']}"
     ig1 = _cut(text.get("ig_first_line") or title, pk.get("ig_first_line_max_chars", 125))
-    ig = f"{ig1}\n🎥 {credit}\n{pk['disclaimer']}\n\n{hashtags}"
+    ig_who = f"{name} ({credit} on YouTube)" if credit != name else name
+    ig = f"{ig1}\n🎥 {ig_who}\n{pk['disclaimer']}\n\n{hashtags}"
     return {"moment_id": str(m["moment_id"]), "brand": m["_brand"], "content_type": m.get("content_type") or "chaos",
             "hook_text": hook, "title_label": " ".join(label_words), "title": title,
             "description": description, "hashtags": hashtags, "creator_credit": credit, "ig_caption": ig}
@@ -276,6 +281,8 @@ def plan(moments, tracker, candidates, batch_rows, settings, rules, now):
     want = sum(slots.values())
     cand = {str(c.get("video_id")): c for c in candidates}
     picked = assign(pick(moments, tracker, cand, now, cfg, want), slots, existing)
+    for m in picked:
+        m["_handle"] = str(cand.get(str(m.get("video_id")), {}).get("channel_handle") or "").strip()
     batch = {"batch_id": day, "start_index": len(todays) + 1, "clips": []}
     return batch, picked
 

@@ -12,6 +12,7 @@ TABS = {
         "kind", "duration_s", "views", "subscribers", "age_h", "views_per_hour",
         "outlier_score", "is_watchlist", "campaign_lead", "campaign_link",
         "found_at", "status", "score", "found_by", "updated_at", "signals_at", "sat_checked_at", "sat_shorts",
+        "channel_handle",
     ],
     # Tracker summary: one row per tracked video, latest numbers.
     "Tracker": [

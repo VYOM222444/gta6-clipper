@@ -115,3 +115,28 @@ def test_rising_keywords_and_seo():
     play = [{"section": "research.seo", "rule": "DO: title.emoji in title (winners 70% vs average 40%)"},
             {"section": "research.hook", "rule": "DO: something else"}]
     assert "emoji" in decider.seo_findings(play) and "something" not in decider.seo_findings(play)
+
+
+def test_credit_uses_handle_when_known():
+    from agents import decider
+    from agents.publish_batch import validate
+    from lib.config import load_rules, load_settings
+    rules, settings = load_rules(), load_settings()
+    m = {"moment_id": "abc-g10", "_brand": "wasted_again", "content_type": "chaos",
+         "channel_title": "Techno Gamerz", "_handle": "@TechnoGamerzOfficial", "reason": "bike crash"}
+    c = decider.finish_clip(m, {"title": "GTA 6 bike crash", "hook_text": "he did NOT see that",
+                                "title_label": "BIKE FAIL"}, rules)
+    assert c["creator_credit"] == "@TechnoGamerzOfficial"
+    assert "@TechnoGamerzOfficial (Techno Gamerz)" in c["description"]
+    assert "Techno Gamerz (@TechnoGamerzOfficial on YouTube)" in c["ig_caption"]
+    assert not validate(c, {"gate_status": "ready"}, [], settings, rules, "x")
+    m["_handle"] = ""
+    c = decider.finish_clip(m, {"title": "x"}, rules)
+    assert c["creator_credit"] == "Techno Gamerz"
+
+
+def test_scout_handle_of():
+    from agents.scout import handle_of
+    assert handle_of({"snippet": {"customUrl": "@abc"}}) == "@abc"
+    assert handle_of({"snippet": {"customUrl": "abc"}}) == "@abc"
+    assert handle_of({}) == ""
