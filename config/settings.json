@@ -262,6 +262,23 @@
       "window_hours": 72,
       "min_group": 6,
       "min_diff": 0.2
+    },
+    "baseline": {
+      "_note": "Winner = beat its OWN channel's normal Short views (lib/baselines.py), not raw views. Cache data/channel_baselines.json.",
+      "enabled": true,
+      "max_age_days": 3,
+      "run_budget_units": 600,
+      "recent_uploads": 30,
+      "keep": 15,
+      "min_age_days": 2,
+      "min_shorts": 3,
+      "max_duration_s": 180,
+      "cap": 100,
+      "min_views": 10000,
+      "fresh_min_views": 1000,
+      "min_baseline": 300,
+      "fallback_views_per_sub": 0.1,
+      "fallback_views": 5000
     }
   },
   "decider": {

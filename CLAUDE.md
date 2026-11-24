@@ -613,3 +613,14 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   the first caption) + its .ass to Drive `GTA6 Clipper/_debug/<day>/` (Claude can read these via
   the Drive connector). Captions-missing cause still unknown (local renders show them): check the
   _debug frame of the next run. 174 tests.
+- 2026-11-24 (winners = breakouts): owner chose to judge a Short against its OWN channel's normal
+  views (option B), not raw views or subscribers. `lib/baselines.py`: per channel, latest 30
+  uploads (playlistItems 1 unit + videos 1 unit) -> settled Shorts (>= 2 days old) -> views, cached
+  in `data/channel_baselines.json` for 3 days (committed by the Researcher workflow); the Short
+  being judged is left out of its channel's median. breakout = views / channel median (fallback
+  0.1 x subscribers, else 5,000; `baseline_source` says which). Researcher score (settled and
+  fresh, fresh still labelled within age buckets) = log10(1 + min(breakout, 100)) + 0.15 x
+  log10(1 + views), -3 under the view floor (10k settled / 1k fresh). Research columns:
+  channel_median_views, breakout, baseline_source. Extra quota: own 600 units per run on top of the
+  run budget (first day up to ~1,200, then ~100-300/day thanks to the cache). Old rows keep their
+  old labels until the daily collect finds them again. 176 tests.

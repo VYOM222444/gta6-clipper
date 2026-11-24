@@ -52,7 +52,7 @@ def test_collect_uses_date_window_and_short_duration():
     yt = YT(search={"GTA 6 #shorts": ["a", "b"]}, videos=[short("a", 1000), short("b", 10)],
             channels=[{"id": "UC1", "statistics": {"subscriberCount": "100"}}])
     rows, notes, n = researcher.collect(yt, S, R, NOW)
-    assert n == 2 and len(rows) == 2 and notes == []
+    assert n == 2 and len(rows) == 2 and all(x.startswith("channel baselines") for x in notes)
     kws = [c for c in yt.calls if isinstance(c, dict)]
     assert kws and all(c["duration"] == "short" and c["published_before"] for c in kws)
 
@@ -253,3 +253,34 @@ def test_fresh_row_upsert_keeps_settled_label():
                        researcher.build_fresh_rows([fresh_short("x", 900, 10)] * 1, [], R, CFG, NOW))
     rec = ws.get_all_records()[0]
     assert rec["label"] == "winner" and str(rec["score"]) == "5" and rec["fresh_label"]
+
+
+def test_breakout_beats_raw_views():
+    """A small channel's 10x breakout outranks a big channel's normal Short."""
+    from lib.baselines import Baselines
+    bl = Baselines(data={"UCbig": {"views": {f"b{i}": 2_000_000 for i in range(5)}, "at": "x"},
+                         "UCsmall": {"views": {f"s{i}": 20_000 for i in range(5)}, "at": "x"}})
+    vids = [short("big", 2_500_000, ch="UCbig"), short("small", 200_000, ch="UCsmall"),
+            short("tiny", 900, ch="UCnew")]
+    chans = [{"id": "UCbig", "statistics": {"subscriberCount": "3000000"}},
+             {"id": "UCsmall", "statistics": {"subscriberCount": "50000"}},
+             {"id": "UCnew", "statistics": {"subscriberCount": "10"}}]
+    rows = {r["video_id"]: r for r in researcher.build_rows(vids, chans, R, S["researcher"], NOW, bl)}
+    assert rows["small"]["breakout"] == 10.0 and rows["small"]["baseline_source"] == "channel"
+    assert rows["big"]["breakout"] == 1.25
+    assert rows["small"]["score"] > rows["big"]["score"]
+    assert rows["tiny"]["baseline_source"] == "subscribers"
+    assert rows["tiny"]["score"] < rows["big"]["score"]        # under the view floor
+
+
+def test_baseline_refresh_excludes_the_short_itself():
+    from lib.baselines import Baselines
+    from agents.scout import parse_iso_duration
+    yt = FakeYouTube(videos=[short(f"v{i}", 1000 * (i + 1), days_old=5) for i in range(4)]
+                     + [short("young", 9_999_999, days_old=1)],
+                     uploads={"UC1": ["v0", "v1", "v2", "v3", "young"]})
+    bl = Baselines(data={})
+    n, notes = bl.refresh(yt, ["UC1"], NOW, S["researcher"]["baseline"], parse_iso_duration)
+    assert n == 1 and "young" not in bl.data["UC1"]["views"]      # too new to have settled
+    assert bl.median("UC1") == 2500 and bl.median("UC1", exclude_id="v3") == 2000
+    assert not bl.stale("UC1", NOW, 3)
