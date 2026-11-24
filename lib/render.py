@@ -50,7 +50,12 @@ def chunk_words(words, max_words=3, pause_split=0.45):
         start = c[0]["start"]
         end = chunks[i + 1][0]["start"] if i + 1 < len(chunks) else c[-1]["end"] + 0.3
         end = min(end, c[-1]["end"] + 0.6)          # don't hang on screen during silence
-        out.append({"words": [x["word"] for x in c], "start": start, "end": max(end, start + 0.25)})
+        times = []
+        for j, x in enumerate(c):   # per-word on-screen time: until the next word starts
+            nxt = c[j + 1]["start"] if j + 1 < len(c) else max(end, start + 0.25)
+            times.append((x["start"], max(nxt, x["start"] + 0.12)))
+        out.append({"words": [x["word"] for x in c], "start": start, "end": max(end, start + 0.25),
+                    "times": times})
     return out
 
 
@@ -112,40 +117,89 @@ def mask_words(words, bad):
 
 
 def layout_boxes(src_w, src_h, tpl):
-    """Where the foreground video sits on the canvas: (fg_w, fg_h, top_y)."""
-    if src_h > src_w:  # vertical source: fill the whole canvas
+    """Where the foreground video sits on the canvas: (fg_w, fg_h, top_y).
+    tpl['layout'] == 'fill' (or a vertical source) fills the whole canvas (centre crop)."""
+    if src_h > src_w or tpl.get("layout") == "fill":
         return W, H, 0
-    zoom = tpl.get("fg_zoom", 1.0)
+    zoom = tpl.get("fg_zoom", 1.0) if tpl.get("layout") != "black" else 1.0
     scaled_w = int(round(W * zoom / 2) * 2)
     fg_h = int(round(scaled_w * src_h / src_w / 2) * 2)
     fg_h = min(fg_h, H)
     return W, fg_h, (H - fg_h) // 2
 
 
-def build_ass(tpl, chunks, title_label, hook_text, credit, duration, src_w=1920, src_h=1080):
+DEFAULT_STYLE = {"title_label": True, "hook_text": True, "captions": "phrase", "caption_position": "bottom",
+                 "caption_keyword_color": True, "layout": "blur"}
+POP = r"\fscx72\fscy72\t(0,90,\fscx108\fscy108)\t(90,160,\fscx100\fscy100)"
+MAX_TEXT_W = 940
+
+
+def fit_size(text, size, max_w=MAX_TEXT_W, char_w=0.5):
+    """Font size so one line of `text` fits max_w px (Anton is ~0.5 x size per character)."""
+    n = max(len(text), 1)
+    return max(48, min(size, int(max_w / (n * char_w))))
+
+
+def caption_y(position, fg_h, top, size):
+    """Caption centre line. middle = lower part of the gameplay; bottom = just under it."""
+    if position == "top":
+        return max(top + int(size * 0.9), 560)
+    if position == "middle":
+        return top + int(fg_h * (0.72 if top else 0.62))
+    y = top + fg_h + 70 + int(size * 0.55) if top else SAFE_BOTTOM - 140   # under the "via" credit
+    return min(y, SAFE_BOTTOM - size)
+
+
+def caption_events(chunks, style, cap, hl, white, duration):
+    """Caption Dialogue texts: [(start, end, text)]. word_by_word shows one word at a time."""
+    out = []
+    for c in chunks:
+        if c["start"] >= duration:
+            break
+        words = [w.upper() if cap.get("uppercase") else w for w in c["words"]]
+        if style.get("captions") == "word_by_word" and c.get("times"):
+            for w, (a, b) in zip(words, c["times"]):
+                if a < duration:
+                    out.append((a, min(b, duration), [w], None))
+            continue
+        k = keyword_index(c["words"]) if style.get("caption_keyword_color") else None
+        out.append((c["start"], min(c["end"], duration), words, k))
+    lines = []
+    for a, b, words, k in out:
+        text = " ".join(words)
+        fs = fit_size(text, cap["size"])
+        parts = [f"{{\\c{hl}}}{w}{{\\c{white}}}" if i == k else w for i, w in enumerate(words)]
+        lines.append((a, b, f"{{\\fs{fs}{POP}}}" + " ".join(parts)))
+    return lines
+
+
+def build_ass(tpl, chunks, title_label, hook_text, credit, duration, src_w=1920, src_h=1080, style=None):
+    """style (lib/style.py): which elements are shown and how. None = the old fixed look."""
+    st = dict(DEFAULT_STYLE, **(style or {}))
     fonts, acc = tpl["fonts"], tpl["accent"]
     lab, hk, cap, cr = tpl["label"], tpl["hook"], tpl["caption"], tpl["credit"]
     _, fg_h, top = layout_boxes(src_w, src_h, tpl)
     vertical = top == 0
     label_y = lab["y"] if not vertical else 300
-    cap_y = min(cap["y"], SAFE_BOTTOM - cap["size"]) if not vertical else SAFE_BOTTOM - 160
+    cap_y = caption_y(st.get("caption_position", "bottom"), fg_h, top, cap["size"])
     credit_y = top + fg_h + 28 if not vertical else SAFE_BOTTOM - 40
-    # hook sits ABOVE the title label, never on the gameplay (the payoff happens in the
-    # first seconds, right where a centred hook would cover it)
+    # hook sits ABOVE the gameplay (or high up on a full-screen clip), never on the payoff
     hook_y = hk.get("y", 250) if not vertical else hk.get("y_vertical", 480)
+    if not st.get("title_label") and not vertical:
+        hook_y = max(hook_y, top - int(hk["size"] * 0.9))
 
     head = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {W}
 PlayResY: {H}
-WrapStyle: 0
+WrapStyle: 2
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Label,{fonts['label']},{lab['size']},{ass_color(lab['text'])},&H000000FF,{ass_color(acc)},{ass_color(acc)},0,0,0,0,100,100,1,0,3,{lab['box_pad']},0,5,40,40,0,1
 Style: Hook,{fonts['hook']},{hk['size']},{ass_color(hk['color'])},&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,1,0,1,{hk['outline']},3,5,60,60,0,1
-Style: Caption,{fonts['caption']},{cap['size']},{ass_color(cap['color'])},&H000000FF,&H00000000,&H78000000,0,0,0,0,100,100,1,0,1,{cap['outline']},{cap['shadow']},5,70,140,0,1
+Style: Caption,{fonts['caption']},{cap['size']},{ass_color(cap['color'])},&H000000FF,&H00000000,&H78000000,0,0,0,0,100,100,1,0,1,{cap['outline']},{cap['shadow']},5,40,40,0,1
 Style: Credit,{fonts['credit']},{cr['size']},{ass_color(cr['color'], 1 - cr['alpha'])},&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,2,0,4,{cr['margin_x']},40,0,1
 
 [Events]
@@ -153,27 +207,23 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     end = ass_time(duration)
     lines = []
-    if title_label:
-        lines.append(f"Dialogue: 2,{ass_time(0)},{end},Label,,0,0,0,,{{\\pos({W // 2},{label_y})}}{ass_text(title_label.upper())}")
-    if hook_text:
+    if title_label and st.get("title_label"):
+        text = title_label.upper()
+        lines.append(f"Dialogue: 2,{ass_time(0)},{end},Label,,0,0,0,,{{\\pos({W // 2},{label_y})"
+                     f"\\fs{fit_size(text, lab['size'], 900, 0.46)}}}{ass_text(text)}")
+    if hook_text and st.get("hook_text"):
+        text = hook_text.upper()
         hook_end = min(hk["seconds"], duration)
         lines.append(f"Dialogue: 3,{ass_time(0)},{ass_time(hook_end)},Hook,,0,0,0,,"
-                     f"{{\\pos({W // 2},{hook_y})\\fad(0,200)}}{ass_text(hook_text.upper())}")
+                     f"{{\\pos({W // 2},{hook_y})\\fs{fit_size(text, hk['size'], 980, 0.5)}{POP}\\fad(0,200)}}"
+                     f"{ass_text(text)}")
     if credit:
         lines.append(f"Dialogue: 1,{ass_time(0)},{end},Credit,,0,0,0,,{{\\pos({cr['margin_x']},{credit_y})}}"
                      f"via {ass_text(credit)}")
-    hl = ass_color(acc)
-    white = ass_color(cap["color"])
-    for c in chunks:
-        if c["start"] >= duration:
-            break
-        words = [w.upper() if cap.get("uppercase") else w for w in c["words"]]
-        k = keyword_index(c["words"])
-        parts = []
-        for i, w in enumerate(words):
-            parts.append(f"{{\\c{hl}}}{w}{{\\c{white}}}" if i == k else w)
-        lines.append(f"Dialogue: 0,{ass_time(c['start'])},{ass_time(min(c['end'], duration))},Caption,,0,0,0,,"
-                     f"{{\\pos({W // 2 - 35},{cap_y})}}{' '.join(parts)}")
+    if st.get("captions") != "none":
+        for a, b, text in caption_events(chunks, st, cap, ass_color(acc), ass_color(cap["color"]), duration):
+            lines.append(f"Dialogue: 0,{ass_time(a)},{ass_time(b)},Caption,,0,0,0,,"
+                         f"{{\\pos({W // 2},{cap_y})}}{text}")
     return head + "\n".join(lines) + "\n"
 
 
@@ -197,10 +247,11 @@ def ffmpeg_cmd(src, ass_path, fonts_dir, out, tpl, src_w, src_h, duration, has_a
             vf = (f"[0:v]fps=30,scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
                   f"setsar=1,{ass}[v]")
     else:
-        zoom_w = int(round(W * tpl.get("fg_zoom", 1.0) / 2) * 2)
+        zoom_w = W if tpl.get("layout") == "black" else int(round(W * tpl.get("fg_zoom", 1.0) / 2) * 2)
         vf = (f"[0:v]fps=30,split=2[a][b];"
               f"[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
-              f"boxblur={tpl['bg_blur']}:2,eq=brightness={tpl['bg_brightness']}[bg];"
+              + ("drawbox=x=0:y=0:w=iw:h=ih:c=black:t=fill[bg];" if tpl.get("layout") == "black" else
+                 f"boxblur={tpl['bg_blur']}:2,eq=brightness={tpl['bg_brightness']}[bg];") +
               f"[b]scale={zoom_w}:{fg_h},crop={W}:{fg_h}[fg0];")
         zc = zoom_chain("fg0", "fg", zoom[0], W, fg_h, zoom[1]) if zoom and zoom[0] else ""
         vf += (zc + ";" if zc else "[fg0]null[fg];") + f"[bg][fg]overlay=0:{top},setsar=1,{ass}[v]"

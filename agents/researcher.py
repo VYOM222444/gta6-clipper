@@ -42,6 +42,7 @@ from datetime import datetime, timedelta, timezone
 
 from agents.scout import parse_iso_duration, title_ok
 from lib import keywords, sheets
+from lib import style as clip_style
 from lib.config import REPO_ROOT, load_rules, load_settings
 from lib.gemini import BudgetReached, Gemini, GeminiError, Transient, Usage
 from lib.schema import TABS
@@ -52,6 +53,7 @@ USAGE_FILE = REPO_ROOT / "data" / "gemini_usage_researcher.json"
 CONTENT_TYPES = ["chaos", "reaction", "news", "secret", "tip", "other"]
 HOOKS = ["action_first", "text_question", "text_statement", "face_reaction", "voice_hook",
          "countdown_or_list", "before_after", "none"]
+HOOK_TEXT_KINDS = ["question", "bold_claim", "reaction", "warning", "number_or_list", "pov", "none"]
 SFX = ["riser", "impact", "whoosh", "record_scratch", "meme_sound", "ding", "none"]
 MUSIC = ["none", "phonk", "hype_edm", "hip_hop_rap", "epic_orchestral", "lofi_chill", "meme_song",
          "sad_emotional", "other"]
@@ -65,6 +67,8 @@ SCHEMA = {
     "properties": {
         "hook_type": {"type": "STRING", "enum": HOOKS},
         "text_on_screen_first_second": {"type": "BOOLEAN"},
+        "hook_text_on_screen": {"type": "STRING"},
+        "hook_text_kind": {"type": "STRING", "enum": HOOK_TEXT_KINDS},
         "payoff_second": {"type": "NUMBER"},
         "has_title_label": {"type": "BOOLEAN"},
         "caption_style": {"type": "STRING", "enum": ["none", "word_by_word", "phrase_by_phrase", "static_text"]},
@@ -103,6 +107,10 @@ edited, exactly as you see and hear it. Do not judge whether it is good.
   happening; text_question / text_statement = big on-screen text; face_reaction = a face
   reacting; voice_hook = someone speaking a hook; countdown_or_list; before_after; none).
 - text_on_screen_first_second: is there readable on-screen text in the first second?
+- hook_text_on_screen: the exact big headline/hook text shown in the first 2 seconds (not
+  subtitles of speech, not a channel name), copied word for word; "" if there is none.
+- hook_text_kind: what that hook text is (question, bold_claim, reaction like "BRO WHAT",
+  warning, number_or_list, pov like "POV: ..."), or none.
 - payoff_second: the second when the main payoff (crash, joke, reveal) happens.
 - has_title_label: a fixed text label/box describing the clip that stays on screen.
 - caption_style / caption_position / caption_keyword_color: subtitles of speech, if any.
@@ -408,9 +416,9 @@ BOOL_FEATURES = ["text_on_screen_first_second", "has_title_label", "caption_keyw
                  "cuts_on_beat",
                  "voiceover", "emoji_or_stickers", "loop_ending", "ends_right_after_payoff"]
 NUM_FEATURES = ["payoff_second", "zoom_ins", "cuts", "length_s"]
-ENUM_FEATURES = ["hook_type", "caption_style", "caption_position", "layout", "pace", "content_type",
+ENUM_FEATURES = ["hook_text_kind", "hook_type", "caption_style", "caption_position", "layout", "pace", "content_type",
                  "music_type"]
-SECTION = {"text_on_screen_first_second": "hook", "hook_type": "hook", "payoff_second": "hook",
+SECTION = {"hook_text_kind": "hook", "text_on_screen_first_second": "hook", "hook_type": "hook", "payoff_second": "hook",
            "has_title_label": "text", "caption_style": "captions", "caption_position": "captions",
            "caption_keyword_color": "captions", "layout": "framing", "facecam": "framing",
            "length_s": "length", "content_type": "content",
@@ -635,6 +643,31 @@ def findings(rows, cfg, now):
     return play, src
 
 
+def style_rows(rows, settings, now):
+    """style.* Playbook rows: the clip style winners use (7-day winners + rising fresh Shorts)."""
+    cfg, fcfg = settings["researcher"], settings["researcher"]["fresh"]
+    week, fresh_win = timedelta(days=cfg.get("window_days", 7)), timedelta(hours=fcfg.get("window_hours", 72))
+    win, avg, seen = [], [], set()
+    for r in rows:
+        f = features_of(r)
+        if not f or r.get("research_id") in seen:
+            continue
+        t, ft = parse_time(r.get("analyzed_at")), parse_time(r.get("fresh_at"))
+        recent = t and now - t <= week
+        fresh = ft and now - ft <= fresh_win
+        if (recent and r.get("label") == "winner") or (fresh and r.get("fresh_label") == "rising"):
+            win.append(f)
+        elif (recent and r.get("label") == "average") or (fresh and r.get("fresh_label") == "fresh_average"):
+            avg.append(f)
+        else:
+            continue
+        seen.add(r.get("research_id"))
+    defaults = settings["render"].get("style_defaults", {})
+    st, why, ex = clip_style.choose(win, avg, defaults, cfg.get("min_group", 8), cfg.get("min_diff", 0.15))
+    src = f"researcher style {now.date().isoformat()} (n={len(win)} winners / {len(avg)} average)"
+    return clip_style.playbook_rows(st, why, ex, src, iso(now))
+
+
 # --- run ----------------------------------------------------------------------------------------
 
 def main(argv=None):
@@ -731,6 +764,12 @@ def main(argv=None):
             msgs.append(f"right now: {src}")
         for m in msgs:
             print(f"Findings {m}.")
+        sp = style_rows(records, settings, now)
+        if sp:
+            play += sp
+            print("Style (what winners do):")
+            for p in sp:
+                print(f"  {p['rule'][:160]}")
         if play:
             sheets.upsert_rows(ss.worksheet("Playbook"), TABS["Playbook"], "rule_id", play)
             for p in play:

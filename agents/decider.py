@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from agents import publish_batch
+from lib import style as clip_style
 from lib import sheets
 from lib.config import REPO_ROOT, load_rules, load_settings
 from lib.gemini import Gemini, GeminiError, Usage
@@ -140,7 +141,7 @@ def assign(picked, slots, existing=None):
 
 # --- 3. write -------------------------------------------------------------------------------
 
-def build_prompt(clips, keywords, seo, rules):
+def build_prompt(clips, keywords, seo, rules, hook_style=""):
     pk, hk, tl = rules["packaging"], rules["hook"], rules["title_label"]
     lines = []
     for i, m in enumerate(clips, start=1):
@@ -150,6 +151,8 @@ def build_prompt(clips, keywords, seo, rules):
     return f"""You write packaging for GTA 6 YouTube Shorts / Instagram Reels made from other creators' clips.
 For EACH clip below return:
 - hook_text: on-screen hook shown in the first 2 seconds, max {hk['max_words']} words, works with sound off, no hashtags.
+  It must make someone stop scrolling: specific to THIS clip (what is about to happen or the
+  surprise), never generic ("Watch this", "GTA 6 moment", "Wait for it" alone are not allowed).{hook_style}
 - title_label: {tl['min_words']}-{tl['max_words']} words, CAPS, says what the clip is (shown on top the whole time).
 - title: YouTube title, max {pk['title_max_chars']} characters, START with the search phrase people type
   (e.g. "GTA 6 police chase ..."), must contain "GTA 6", may end with one emoji.
@@ -207,12 +210,12 @@ def finish_clip(m, text, rules):
             "description": description, "hashtags": hashtags, "creator_credit": credit, "ig_caption": ig}
 
 
-def write_text(gem, clips, keywords, seo, rules):
+def write_text(gem, clips, keywords, seo, rules, hook_style=""):
     """{index: text dict}. Empty dict if Gemini can't help (fallback text is used)."""
     if not clips or gem is None:
         return {}, "no Gemini"
     try:
-        answer, model = gem.generate_json([], build_prompt(clips, keywords, seo, rules), SCHEMA, temperature=0.7)
+        answer, model = gem.generate_json([], build_prompt(clips, keywords, seo, rules, hook_style), SCHEMA, temperature=0.7)
     except GeminiError as e:
         return {}, f"Gemini failed ({e}); simple text used"
     return {int(c.get("n", 0)): c for c in answer.get("clips", [])}, model
@@ -238,6 +241,24 @@ def seo_findings(rows, top=8):
                 if str(r.get("section", "")).startswith(prefix) and str(r.get("rule", "")).startswith("DO")]
     lines = pick("research.now.seo", "now: ") + pick("research.seo", "")
     return "; ".join(lines[:top])
+
+
+HOOK_KINDS = {"question": "a question the clip answers", "bold_claim": "a bold claim",
+              "reaction": "a short reaction (like \"BRO WHAT\")", "warning": "a warning",
+              "number_or_list": "a number or list", "pov": "a POV line (\"POV: ...\")"}
+
+
+def hook_guidance(playbook_rows, settings):
+    """Hook style from what winning Shorts do (Playbook style.* rows) -> extra prompt lines."""
+    st, _, examples = clip_style.from_playbook(playbook_rows, settings["render"].get("style_defaults") or {})
+    out = ""
+    kind = HOOK_KINDS.get(str(st.get("hook_kind") or ""))
+    if kind:
+        out += f"\n  Winning GTA 6 Shorts mostly open with {kind}; about {st.get('hook_words', 5)} words."
+    if examples:
+        out += "\n  Real hooks from winning Shorts (copy the feel, not the words): " + \
+               " | ".join(f'"{e}"' for e in examples[:6])
+    return out
 
 
 def plan(moments, tracker, candidates, batch_rows, settings, rules, now):
@@ -271,7 +292,9 @@ def main():
         tracker = sheets.read_records(ss.worksheet("Tracker"))
         candidates = sheets.read_records(ss.worksheet("Candidates"))
         keywords = rising_keywords(sheets.read_records(ss.worksheet("Keywords")), now)
-        seo = seo_findings(sheets.read_records(ss.worksheet("Playbook")))
+        playbook = sheets.read_records(ss.worksheet("Playbook"))
+        seo = seo_findings(playbook)
+        hook_style = hook_guidance(playbook, settings)
     except sheets.SheetSetupError as e:
         print(f"DECIDER FAILED (sheet): {e}")
         return 1
@@ -291,7 +314,7 @@ def main():
     except GeminiError as e:
         print(f"note: {e}")
         gem = None
-    texts, how = write_text(gem, picked, keywords, seo, rules)
+    texts, how = write_text(gem, picked, keywords, seo, rules, hook_style)
     print(f"Text: {how}. Keywords used: {', '.join(keywords) or 'none'}.")
 
     batch["clips"] = [finish_clip(m, texts.get(i) or fallback_text(m), rules) for i, m in enumerate(picked, 1)]

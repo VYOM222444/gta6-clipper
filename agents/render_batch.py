@@ -21,6 +21,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from lib import style as clip_style
 from lib import edits, render, sheets
 from lib.config import load_rules, load_settings
 from lib.schema import TABS
@@ -180,18 +181,32 @@ def load_audio(path, sr=16000):
     return np.frombuffer(p.stdout, np.int16).astype(np.float32) / 32768.0
 
 
-def prepare_edits(cfg, work):
+def read_playbook():
+    try:
+        return sheets.read_records(sheets.open_sheet(sheets.get_client(), load_settings()["sheet"]["id"]).worksheet("Playbook"))
+    except Exception as e:  # no Playbook: defaults
+        print(f"note: Playbook not read ({e}); using defaults")
+        return None
+
+
+def prepare_style(cfg, rows):
+    """The clip style winners use (Playbook style.* rows, written by the Researcher)."""
+    st, why, _ = clip_style.from_playbook(rows, cfg.get("style_defaults") or {})
+    print("Style (from winners):")
+    for k in ("captions", "caption_position", "caption_keyword_color", "hook_text", "title_label", "layout"):
+        print(f"  {k} = {st.get(k)}  <- {why.get(k, 'default')[:120]}")
+    return st
+
+
+def prepare_edits(cfg, work, rows=None):
     """Effects for this run: Playbook findings > settings.render.edits. Generates the SFX once."""
     ecfg = dict(cfg.get("edits") or {})
     if not ecfg.get("enabled"):
         return None
-    flags, src = ecfg, {}
-    try:
-        rows = sheets.read_records(sheets.open_sheet(sheets.get_client(), load_settings()["sheet"]["id"]).worksheet("Playbook"))
+    if rows is not None:
         flags, src = edits.flags_from_playbook(rows, ecfg)
-    except Exception as e:  # no Playbook: defaults
-        print(f"note: Playbook not read ({e}); using default edits")
-        flags = {k: bool(ecfg.get(k)) for k in edits.FLAG_KEYS}
+    else:
+        flags, src = {k: bool(ecfg.get(k)) for k in edits.FLAG_KEYS}, {}
     print("Edits:", ", ".join(f"{k}={'on' if v else 'off'} ({src.get(k, 'default')})" for k, v in flags.items()))
     work.mkdir(parents=True, exist_ok=True)
     ecfg["impact_path"], ecfg["whoosh_path"] = work / "sfx_impact.wav", work / "sfx_whoosh.wav"
@@ -217,7 +232,23 @@ def remove_music(src, work, ecfg):
     return out
 
 
-def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None):
+def save_preview(video, ass_path, chunks, cfg, row, day):
+    """Debug copy for checking a clip without opening it: one small frame (in the middle of the
+    first caption, else at 3 s) + the subtitle file -> <output_dir>/_debug/<day>/. Never fails the clip."""
+    try:
+        dbg = Path(cfg["output_dir"]) / "_debug" / day
+        dbg.mkdir(parents=True, exist_ok=True)
+        t = (chunks[0]["start"] + chunks[0]["end"]) / 2 if chunks else 3.0
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{max(t, 0.1):.2f}", "-i", str(video),
+                        "-frames:v", "1", "-vf", "scale=540:-2", str(dbg / f"{row['batch_id']}.jpg")],
+                       capture_output=True, timeout=60)
+        shutil.copy(str(ass_path), str(dbg / f"{row['batch_id']}.ass.txt"))
+        print(f"  {row['batch_id']}: {sum(1 for c in chunks)} caption chunks; preview in _debug/{day}/")
+    except Exception as e:
+        print(f"  note: preview not saved ({e})")
+
+
+def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
     work = Path(cfg["work_dir"])
     work.mkdir(parents=True, exist_ok=True)
     src = work / f"{row['batch_id']}.src.mp4"
@@ -252,10 +283,12 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None):
     words, lang = transcriber.words(used) if has_audio else ([], "")
     words = render.mask_words(words, load_rules().get("captions", {}).get("mask_words", []))
     tpl = render.load_template(row["brand"])
+    if style and style.get("layout"):
+        tpl["layout"] = style["layout"]
     chunks = render.chunk_words(words, tpl["caption"]["max_words"], tpl["caption"]["pause_split"])
     ass_path = work / f"{row['batch_id']}.ass"
     ass_path.write_text(render.build_ass(tpl, chunks, row.get("title_label", ""), row.get("hook_text", ""),
-                                         row.get("creator_credit", ""), dur, w, h), encoding="utf-8")
+                                         row.get("creator_credit", ""), dur, w, h, style), encoding="utf-8")
     mp4, txt = output_paths(cfg["output_dir"], row, day)
     mp4.parent.mkdir(parents=True, exist_ok=True)
     tmp = work / f"{row['batch_id']}.out.mp4"
@@ -283,12 +316,14 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None):
                 print(f"  note: effects pass failed, plain clip kept ({p2.stderr.strip()[-100:]})")
                 plan["replay"], plan["impacts"], plan["whooshes"] = None, [], []
         edit_tags = edits.tags(plan, bool(ecfg.get("remove_music")) and used != src)
+    save_preview(tmp, ass_path, chunks, cfg, row, day)
     shutil.move(str(tmp), str(mp4))  # Drive is a different disk: move, not rename
     txt.write_text(render.post_text(row), encoding="utf-8")
     print(f"  {row['batch_id']} {row['brand']}: {dur:.0f}s, {len(words)} words ({lang}) -> {mp4}")
     return {"fetch_status": "done", "render_status": "done", "output_path": str(mp4),
             "rendered_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "template_version": str(tpl.get("version", "")) + ("+" + ",".join(edit_tags) if edit_tags else "")}
+            "template_version": str(tpl.get("version", "")) + ("+" + ",".join(edit_tags) if edit_tags else "")
+                                + (f"|{clip_style.tag(style)}" if style else "")}
 
 
 def main():
@@ -313,13 +348,15 @@ def main():
         print("Nothing to do. Type 'yes' in the approved column of the Batch tab first.")
         return 0
     transcriber = Transcriber(cfg["whisper_model"])
-    ecfg = prepare_edits(cfg, Path(cfg["work_dir"]))
+    playbook = read_playbook()
+    style = prepare_style(cfg, playbook)
+    ecfg = prepare_edits(cfg, Path(cfg["work_dir"]), playbook)
     day = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")
     headers = TABS[TAB]
     ok = 0
     for row in todo:
         try:
-            result = render_one(row, cfg, transcriber, day, js_runtime, ecfg)
+            result = render_one(row, cfg, transcriber, day, js_runtime, ecfg, style)
         except Exception as e:  # keep going with the other clips
             result = {"render_status": f"failed: {type(e).__name__}: {str(e)[:100]}"}
             if (Path(cfg["work_dir"]) / f"{row['batch_id']}.src.mp4").exists():

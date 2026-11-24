@@ -173,6 +173,17 @@
       "impact_volume": 0.9,
       "whoosh_volume": 0.5,
       "rest_volume": 0.3
+    },
+    "style_defaults": {
+      "_note": "Used until the Researcher has enough analysed winners; then Playbook style.* rows decide (lib/style.py).",
+      "title_label": false,
+      "hook_text": true,
+      "hook_kind": "bold_claim",
+      "hook_words": 5,
+      "captions": "phrase",
+      "caption_position": "middle",
+      "caption_keyword_color": false,
+      "layout": "blur"
     }
   },
   "researcher": {
