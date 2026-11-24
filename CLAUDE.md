@@ -624,3 +624,13 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   channel_median_views, breakout, baseline_source. Extra quota: own 600 units per run on top of the
   run budget (first day up to ~1,200, then ~100-300/day thanks to the cache). Old rows keep their
   old labels until the daily collect finds them again. 176 tests.
+- 2026-11-24 (gap report): `lib/skills.py` SKILLS = every editing trick the Researcher tags, with
+  `have` = can the Renderer do it (zoom, impact, whoosh, replay, end cut, label, hook, captions,
+  keyword colour, 3 layouts) or not yet (split-screen facecam, shake, freeze, in-clip slow-mo,
+  emoji/stickers, loop ending, riser/scratch/meme/ding sounds, fast cuts, cuts on beat, voiceover);
+  background music = NOT FOR US (added in the apps). Researcher findings step (same winners as the
+  style: 7-day winners + rising fresh vs average) -> Playbook `gaps.<key>` rows ranked:
+  BUILD NEXT (can't do, winners >= 15 points more and >= 20% use it), MAYBE, HAVE IT, SKIP.
+  Owner reviews a sample of each skill before it ships; when built, flip `have` to True.
+  Workflow: manual mode `findings` recomputes Playbook only (style + gaps, no YouTube/Gemini).
+  179 tests.

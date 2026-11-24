@@ -42,6 +42,7 @@ from datetime import datetime, timedelta, timezone
 
 from agents.scout import parse_iso_duration, title_ok
 from lib import keywords, sheets
+from lib import skills
 from lib import style as clip_style
 from lib.baselines import Baselines, breakout
 from lib.config import REPO_ROOT, load_rules, load_settings
@@ -675,8 +676,8 @@ def findings(rows, cfg, now):
     return play, src
 
 
-def style_rows(rows, settings, now):
-    """style.* Playbook rows: the clip style winners use (7-day winners + rising fresh Shorts)."""
+def winner_groups(rows, settings, now):
+    """Feature dicts of 7-day winners + rising fresh Shorts, and of average ones (each Short once)."""
     cfg, fcfg = settings["researcher"], settings["researcher"]["fresh"]
     week, fresh_win = timedelta(days=cfg.get("window_days", 7)), timedelta(hours=fcfg.get("window_hours", 72))
     win, avg, seen = [], [], set()
@@ -694,10 +695,26 @@ def style_rows(rows, settings, now):
         else:
             continue
         seen.add(r.get("research_id"))
+    return win, avg
+
+
+def style_rows(rows, settings, now):
+    """style.* Playbook rows: the clip style winners use (7-day winners + rising fresh Shorts)."""
+    cfg = settings["researcher"]
+    win, avg = winner_groups(rows, settings, now)
     defaults = settings["render"].get("style_defaults", {})
     st, why, ex = clip_style.choose(win, avg, defaults, cfg.get("min_group", 8), cfg.get("min_diff", 0.15))
     src = f"researcher style {now.date().isoformat()} (n={len(win)} winners / {len(avg)} average)"
     return clip_style.playbook_rows(st, why, ex, src, iso(now))
+
+
+def gap_rows(rows, settings, now):
+    """gaps.* Playbook rows: editing tricks ranked by how much more winners use them (lib/skills.py)."""
+    cfg = settings["researcher"]
+    win, avg = winner_groups(rows, settings, now)
+    g = skills.report(win, avg, cfg.get("min_diff", 0.15), cfg.get("gap_min_use", 0.2), cfg.get("min_group", 8))
+    src = f"researcher gaps {now.date().isoformat()} (n={len(win)} winners / {len(avg)} average)"
+    return skills.playbook_rows(g, src, iso(now))
 
 
 # --- run ----------------------------------------------------------------------------------------
@@ -797,6 +814,13 @@ def main(argv=None):
         for m in msgs:
             print(f"Findings {m}.")
         sp = style_rows(records, settings, now)
+        gp = gap_rows(records, settings, now)
+        if gp:
+            play += gp
+            print("Gap report (editing tricks winners use that we can't do yet):")
+            for p in gp:
+                if "BUILD NEXT" in p["rule"] or "MAYBE" in p["rule"]:
+                    print(f"  {p['rule']}")
         if sp:
             play += sp
             print("Style (what winners do):")

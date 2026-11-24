@@ -19,7 +19,7 @@ on:
         required: false
         default: ""
       mode:
-        description: "all (settled + fresh) or fresh (0-72 h Shorts only)"
+        description: "all (settled + fresh), fresh (0-72 h Shorts only) or findings (only recompute Playbook: style, gaps; no YouTube/Gemini)"
         required: false
         default: "all"
 
@@ -78,7 +78,7 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: python -m agents.researcher all
+        run: python -m agents.researcher ${{ inputs.mode == 'findings' && 'findings' || 'all' }}
       - name: Save Gemini call counter
         if: always()
         run: |
