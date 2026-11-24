@@ -42,7 +42,7 @@ from datetime import datetime, timedelta, timezone
 
 from agents.scout import parse_iso_duration, title_ok
 from lib import keywords, sheets
-from lib import skills
+from lib import examples, skills
 from lib import style as clip_style
 from lib.baselines import Baselines, breakout
 from lib.config import REPO_ROOT, load_rules, load_settings
@@ -676,6 +676,23 @@ def findings(rows, cfg, now):
     return play, src
 
 
+def winner_entries(rows, settings, now):
+    """[(row, features)] of 7-day winners + rising fresh Shorts (each once): the Examples tab."""
+    cfg, fcfg = settings["researcher"], settings["researcher"]["fresh"]
+    week, fresh_win = timedelta(days=cfg.get("window_days", 7)), timedelta(hours=fcfg.get("window_hours", 72))
+    out, seen = [], set()
+    for r in rows:
+        f = features_of(r)
+        if not f or r.get("research_id") in seen:
+            continue
+        t, ft = parse_time(r.get("analyzed_at")), parse_time(r.get("fresh_at"))
+        if (t and now - t <= week and r.get("label") == "winner") or \
+                (ft and now - ft <= fresh_win and r.get("fresh_label") == "rising"):
+            out.append((r, f))
+            seen.add(r.get("research_id"))
+    return out
+
+
 def winner_groups(rows, settings, now):
     """Feature dicts of 7-day winners + rising fresh Shorts, and of average ones (each Short once)."""
     cfg, fcfg = settings["researcher"], settings["researcher"]["fresh"]
@@ -730,7 +747,7 @@ def main(argv=None):
     now = datetime.now(timezone.utc)
     try:
         ss = sheets.open_sheet(sheets.get_client(), settings["sheet"]["id"])
-        for tab in (TAB, "Playbook"):
+        for tab in (TAB, "Playbook", "Examples"):
             sheets.ensure_tab(ss, tab, TABS[tab])
         ws = ss.worksheet(TAB)
     except sheets.SheetSetupError as e:
@@ -815,6 +832,10 @@ def main(argv=None):
             print(f"Findings {m}.")
         sp = style_rows(records, settings, now)
         gp = gap_rows(records, settings, now)
+        ex = examples.build(winner_entries(records, settings, now), iso(now))
+        if ex:
+            sheets.upsert_rows(ss.worksheet("Examples"), TABS["Examples"], "example_id", ex)
+            print(f"Examples tab: {sum(1 for e in ex if e['url'])} example Shorts in {len({e['category'] for e in ex})} lists.")
         if gp:
             play += gp
             print("Gap report (editing tricks winners use that we can't do yet):")
