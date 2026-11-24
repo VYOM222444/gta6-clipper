@@ -299,6 +299,13 @@
       "min_baseline": 300,
       "fallback_views_per_sub": 0.1,
       "fallback_views": 5000
+    },
+    "examples": {
+      "_note": "Examples tab: top `tricks` viral-right-now tricks x `per_trick` example Shorts + `top` breakouts (lib/examples.py).",
+      "tricks": 5,
+      "per_trick": 10,
+      "top": 10,
+      "min_use": 0.15
     }
   },
   "decider": {

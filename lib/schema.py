@@ -52,7 +52,7 @@ TABS = {
     # Winning Shorts to copy a style from, per editing trick (Researcher, lib/examples.py).
     "Examples": [
         "example_id", "category", "rank", "have_skill", "url", "title", "channel_title", "views",
-        "breakout", "age_days", "style", "updated_at",
+        "breakout", "age_days", "style", "updated_at", "trick_rank", "trick_use",
     ],
     # Researcher notes on top/average GTA Shorts.
     "Research": [

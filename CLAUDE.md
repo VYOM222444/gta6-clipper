@@ -671,3 +671,17 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   yet), style (summary of its Gemini tags). Fixed slots `<category>#<rank>` overwritten each run.
   Workflow: owner picks examples -> screen recording to chat -> Claude studies frames -> sample ->
   owner approves -> skill PR (experiment). 183 tests.
+- 2026-11-24 (example downloads): `agents/fetch_examples.py` + render notebook cell 6 (`EXAMPLES = 20`,
+  0 = skip): after the render, Colab downloads up to 20 Shorts from the Examples tab to Drive
+  `GTA6 Clipper/_examples/<date>/NN_<category>_<id>.mp4` + `_list.txt` (category, link, views,
+  breakout, style). Order: best example of each trick we can't do yet, then TOP breakouts, then the
+  rest; already-downloaded files skipped; stops on YouTube's bot check. For private study only
+  (never posted). Owner sends picks to Claude in chat -> skill. 193 tests.
+- 2026-11-24 (viral tricks now): owner wants the system to find which editing tricks are viral right
+  now and give 10 examples of each. Examples tab reworked: `examples.viral_tricks` ranks every trick
+  in lib/skills.SKILLS by lift (share of winning Shorts using it minus share of average Shorts; must
+  be used by >= 15% of winners), on the last 72 h (rising vs fresh_average, if >= 6 each) else 7-day
+  winners + rising vs average; top 5 tricks x 10 examples (best breakouts first), slots
+  `trick<k>#<n>`, plus `top#<n>` (10 breakouts of any style). New columns trick_rank, trick_use.
+  Researcher log prints "Viral tricks right now". Colab cell 6 `EXAMPLES = 30` = top 3 tricks x 10,
+  files `NN_trick<k>-<name>_<id>.mp4`. Settings `researcher.examples`. 194 tests.

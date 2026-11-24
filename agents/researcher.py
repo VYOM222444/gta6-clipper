@@ -676,6 +676,26 @@ def findings(rows, cfg, now):
     return play, src
 
 
+def viral_tricks_now(rows, settings, now):
+    """Tricks ranked by how much more winning Shorts use them: last 72 h (rising vs average) when
+    there is enough fresh data, else 7-day winners + rising vs average. -> (list, basis)."""
+    fcfg = settings["researcher"]["fresh"]
+    win, avg = [], []
+    for r in rows:
+        f, ft = features_of(r), parse_time(r.get("fresh_at"))
+        if not f or not ft or now - ft > timedelta(hours=fcfg.get("window_hours", 72)):
+            continue
+        if r.get("fresh_label") == "rising":
+            win.append(f)
+        elif r.get("fresh_label") == "fresh_average":
+            avg.append(f)
+    min_use = settings["researcher"].get("examples", {}).get("min_use", 0.15)
+    if len(win) >= fcfg.get("min_group", 6) and len(avg) >= fcfg.get("min_group", 6):
+        return examples.viral_tricks(win, avg, min_use), f"last 72 h: {len(win)} rising vs {len(avg)} average"
+    win, avg = winner_groups(rows, settings, now)
+    return examples.viral_tricks(win, avg, min_use), f"7 days: {len(win)} winners vs {len(avg)} average"
+
+
 def winner_entries(rows, settings, now):
     """[(row, features)] of 7-day winners + rising fresh Shorts (each once): the Examples tab."""
     cfg, fcfg = settings["researcher"], settings["researcher"]["fresh"]
@@ -832,10 +852,17 @@ def main(argv=None):
             print(f"Findings {m}.")
         sp = style_rows(records, settings, now)
         gp = gap_rows(records, settings, now)
-        ex = examples.build(winner_entries(records, settings, now), iso(now))
+        hot, basis = viral_tricks_now(records, settings, now)
+        ecfg = settings["researcher"].get("examples", {})
+        ex = examples.build(winner_entries(records, settings, now), hot, iso(now), ecfg.get("tricks", 5),
+                            ecfg.get("per_trick", 10), ecfg.get("top", 10))
         if ex:
             sheets.upsert_rows(ss.worksheet("Examples"), TABS["Examples"], "example_id", ex)
-            print(f"Examples tab: {sum(1 for e in ex if e['url'])} example Shorts in {len({e['category'] for e in ex})} lists.")
+            print(f"Viral tricks right now ({basis}):")
+            for i, t in enumerate(hot[: ecfg.get("tricks", 5)], start=1):
+                print(f"  #{i} {t['name']}: winners {round(t['w'] * 100)}% vs average {round(t['a'] * 100)}%"
+                      f" ({'we can do it' if t['have'] else 'NOT built yet'})")
+            print(f"Examples tab: {sum(1 for e in ex if e['url'])} example Shorts.")
         if gp:
             play += gp
             print("Gap report (editing tricks winners use that we can't do yet):")
