@@ -25,7 +25,7 @@ import re
 import sys
 from datetime import datetime, timezone
 
-from lib import sheets
+from lib import experiments, sheets
 from lib.config import REPO_ROOT, load_settings
 from lib.schema import TABS
 from lib.youtube import YouTube, YouTubeError
@@ -133,6 +133,23 @@ def stats(ws, yt, now):
     return len(updates)
 
 
+def experiment_report(ss, ws, settings, now):
+    """Skills under test: our posts with vs without, at the earliest solid checkpoint (6/12/24 h)."""
+    skills = list((settings["render"].get("edits", {}).get("experiments") or {}).keys())
+    if (settings["render"].get("reframe") or {}).get("enabled"):
+        skills += ["split", "follow"]
+    res = experiments.report(sheets.read_records(ws), sheets.read_records(ss.worksheet("Batch")), skills)
+    if not res:
+        print("Experiments: not enough posts with/without each skill yet (need 3 + 3 with 6 h views).")
+        return
+    sheets.ensure_tab(ss, "Playbook", TABS["Playbook"])
+    rows = experiments.playbook_rows(res, iso(now))
+    sheets.upsert_rows(ss.worksheet("Playbook"), TABS["Playbook"], "rule_id", rows)
+    print("Experiments (our own posts):")
+    for r in rows:
+        print(f"  {r['rule']}")
+
+
 def main(argv=None):
     what = (argv or sys.argv[1:] or ["all"])[0]
     settings = load_settings()
@@ -149,6 +166,7 @@ def main(argv=None):
             yt = YouTube(budget_units=20)
             n = stats(ws, yt, now)
             print(f"YouTube stats updated for {n} posts ({yt.used} quota units).")
+            experiment_report(ss, ws, settings, now)
     except sheets.SheetSetupError as e:
         print(f"LOG POSTS FAILED (sheet): {e}")
         return 1
