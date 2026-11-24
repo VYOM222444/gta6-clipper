@@ -68,3 +68,9 @@ def test_split_layout_boxes_and_cmd():
     tpl["layout"] = "fill"
     cmd = " ".join(render.ffmpeg_cmd("s.mp4", "a.ass", "f", "o.mp4", tpl, 1920, 1080, 10, True, None, rf))
     assert "scale=-2:1920,crop=1080:1920:x='" in cmd and "vstack" not in cmd
+
+
+def test_split_crop_keeps_the_facecam_out_of_the_gameplay():
+    path = [(0.0, 0.95), (1.0, 0.95)]                   # action pulls right, where the cam is
+    e = reframe.crop_x_expr(path, 2558, 1080, avoid=(0.79, 0.2))
+    assert int(e) <= round(0.79 * 2558) - 1080

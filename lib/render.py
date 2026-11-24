@@ -250,11 +250,11 @@ def _filter_path(p):
     return str(p).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
 
 
-def _follow_crop(path, src_w, src_h, out_h):
+def _follow_crop(path, src_w, src_h, out_h, avoid=None):
     """crop filter that follows the action (lib/reframe path) after scaling the source to out_h."""
     from lib.reframe import crop_x_expr
     sw = int(round(src_w * out_h / src_h / 2) * 2)
-    expr = crop_x_expr(path, sw, W) if path and src_w > src_h else None
+    expr = crop_x_expr(path or [(0.0, 0.5)], sw, W, avoid=avoid) if (path or avoid) and src_w > src_h else None
     x = f":x='{expr}'" if expr else ""
     return f"scale=-2:{out_h},crop={W}:{out_h}{x}:y=0" if expr else \
         f"scale={W}:{out_h}:force_original_aspect_ratio=increase,crop={W}:{out_h}"
@@ -276,7 +276,7 @@ def ffmpeg_cmd(src, ass_path, fonts_dir, out, tpl, src_w, src_h, duration, has_a
         vf = (f"[0:v]fps=30,split=2[c0][p0];"
               f"[c0]crop=iw*{fw:.4f}:ih*{fh:.4f}:iw*{fx:.4f}:ih*{fy:.4f},"
               f"scale={W}:{top}:force_original_aspect_ratio=increase,crop={W}:{top},setsar=1[cam];"
-              f"[p0]{_follow_crop(path, src_w, src_h, fg_h)},setsar=1[g0];"
+              f"[p0]{_follow_crop(path, src_w, src_h, fg_h, (fx, fw))},setsar=1[g0];"
               + (f"{zc};" if zc else "[g0]null[g];") +
               f"[cam][g]vstack=inputs=2,setsar=1,{ass}[v]")
     elif top == 0:

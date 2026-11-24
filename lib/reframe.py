@@ -78,15 +78,21 @@ def smooth_path(points, max_speed=0.3, window=5, start=0.5):
     return out
 
 
-def crop_x_expr(path, scaled_w, crop_w, every=1.0):
+def crop_x_expr(path, scaled_w, crop_w, every=1.0, avoid=None):
     """ffmpeg expression of t for crop x (pixels) following `path` [(t, cx 0..1)], piecewise
     linear, flat sum (no deep nesting, works on old ffmpeg). None when a fixed x is fine."""
     if scaled_w <= crop_w or not path:
         return None
-    lim = scaled_w - crop_w
+    lo, lim = 0, scaled_w - crop_w
+    if avoid:   # (x, w) fractions to keep out of the crop (the facecam when it has its own band)
+        ax0, ax1 = avoid[0] * scaled_w, (avoid[0] + avoid[1]) * scaled_w
+        if avoid[0] + avoid[1] / 2 > 0.5 and ax0 - crop_w >= 0:
+            lim = min(lim, ax0 - crop_w)
+        elif avoid[0] + avoid[1] / 2 <= 0.5 and ax1 <= scaled_w - crop_w:
+            lo = max(lo, ax1)
 
     def x_at(cx):
-        return int(round(min(max(cx * scaled_w - crop_w / 2, 0), lim)))
+        return int(round(min(max(cx * scaled_w - crop_w / 2, lo), lim)))
 
     pts, next_t = [], -1.0
     for t, cx in path:
@@ -188,7 +194,7 @@ def webcam_box(avg, face):
     return float(bx), float(by), float(bw), float(bh)
 
 
-def find_facecam(path, duration, samples=8, width=640):
+def find_facecam(path, duration, samples=8, width=640, inset=0.04):
     """Facecam box as fractions (x, y, w, h) of the source frame, or None."""
     fps = max(samples / max(duration, 1.0), 0.2)
     frames, _ = read_gray(path, fps, width)
@@ -199,6 +205,9 @@ def find_facecam(path, duration, samples=8, width=640):
     if not face:
         return None
     bx, by, bw, bh = webcam_box(frames.mean(axis=0), face)
+    # step inside the overlay so its border / frame never shows
+    ix, iy = bw * inset, bh * inset
+    bx, by, bw, bh = bx + ix, by + iy, bw - 2 * ix, bh - 2 * iy
     return (bx / w, by / h, bw / w, bh / h)
 
 
@@ -207,7 +216,7 @@ def analyze(path, duration, cfg):
     out = {"facecam": None, "path": []}
     try:
         if cfg.get("facecam", True):
-            out["facecam"] = find_facecam(path, duration, cfg.get("face_samples", 8))
+            out["facecam"] = find_facecam(path, duration, cfg.get("face_samples", 8), inset=cfg.get("cam_inset", 0.04))
     except Exception as e:  # no OpenCV, odd video: no facecam
         print(f"  note: facecam check skipped ({str(e)[:80]})")
     try:
