@@ -634,3 +634,7 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   Owner reviews a sample of each skill before it ships; when built, flip `have` to True.
   Workflow: manual mode `findings` recomputes Playbook only (style + gaps, no YouTube/Gemini).
   179 tests.
+- 2026-11-24 (CI fix): the Tests workflow had failed on every run since the editing pack (Nov 19):
+  `ModuleNotFoundError: numpy` (tests/test_edits.py). numpy is installed only in tests.yml
+  (`numpy==2.5.3`), NOT in requirements.txt, so Colab keeps its own numpy. Lesson: check the
+  Tests run after each merge (`gh run list -w tests.yml`).

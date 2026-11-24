@@ -18,5 +18,5 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt numpy==2.5.3  # numpy only for tests: Colab has its own, never pin it there
       - run: python -m pytest -q
