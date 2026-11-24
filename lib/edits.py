@@ -9,6 +9,7 @@ Pure logic here (tested); render_batch runs the ffmpeg commands.
   the clip's own rhythm (music is added later in the apps, so there is no beat to sync to).
 - Sound effects are generated with ffmpeg (no downloaded files, no copyright).
 """
+import hashlib
 import re
 
 SR = 16000
@@ -125,8 +126,27 @@ def plan(duration, payoff, hits, flags, cfg):
         whooshes = [max(0.0, round(z - 0.25, 2)) for z in zooms if payoff is None or abs(z - payoff) > 0.05]
         if replay:
             whooshes.append(max(0.0, round(end - 0.3, 2)))
-    return {"end": round(end, 2), "zooms": zooms, "replay": replay, "impacts": impacts,
-            "whooshes": whooshes, "payoff": payoff}
+    p = {"end": round(end, 2), "zooms": zooms, "replay": replay, "impacts": impacts,
+         "whooshes": whooshes, "payoff": payoff, "shake": None, "freeze": None}
+    if flags.get("shake") and payoff is not None and payoff < end - 0.2:
+        p["shake"] = (round(payoff, 2), round(min(end, payoff + cfg.get("shake_seconds", 0.4)), 2))
+    if flags.get("freeze") and payoff is not None and 0.3 < payoff < end - 0.3:
+        f = cfg.get("freeze_seconds", 0.6)
+        p["freeze"] = (round(payoff, 2), f)
+        # everything after the frozen frame plays f seconds later
+        p["whooshes"] = [round(t + f, 2) if t > payoff else t for t in p["whooshes"]]
+        p["impacts"] = [round(t + f, 2) if t > payoff + 0.05 else t for t in p["impacts"]]
+    return p
+
+
+def experiment_flags(flags, batch_id, experiments):
+    """Skills under test go on a stable random share of clips (same clip = same answer on re-runs),
+    so our own posts can be compared with vs without them."""
+    out = dict(flags)
+    for skill, share in (experiments or {}).items():
+        h = int(hashlib.sha1(f"{batch_id}:{skill}".encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
+        out[skill] = h < float(share)
+    return out
 
 
 def tags(p, remove_music=False):
@@ -139,6 +159,10 @@ def tags(p, remove_music=False):
         out.append("whoosh")
     if p["replay"]:
         out.append("replay")
+    if p.get("shake"):
+        out.append("shake")
+    if p.get("freeze"):
+        out.append("freeze")
     if p["payoff"] is not None and p["end"] < p.get("source_end", p["end"] + 1):
         out.append("cut")
     if remove_music:
@@ -173,16 +197,49 @@ def sfx_cmds(impact_path, whoosh_path):
 def pass2_cmd(main, out, p, impact_path, whoosh_path, cfg):
     """Second pass on the finished vertical clip: slow-mo replay after it + sound effects.
     Returns None when there is nothing to do."""
-    if not (p["replay"] or p["impacts"] or p["whooshes"]):
+    shake, freeze = p.get("shake"), p.get("freeze")
+    if not (p["replay"] or p["impacts"] or p["whooshes"] or shake or freeze):
         return None
     speed = cfg.get("replay_speed", 0.5)
+    reencode = bool(p["replay"] or shake or freeze)
     fc, vlabel, alabel = [], "[0:v]", "[0:a]"
+    if p["replay"]:   # replay is cut from the untouched clip, before shake/freeze change the timing
+        fc += ["[0:v]split=2[m0][r0]", "[0:a]asplit=2[ma0][ra0]"]
+        mv, ma = "[m0]", "[ma0]"
+    else:
+        mv, ma = "[0:v]", "[0:a]"
+    if shake:   # jittered, slightly zoomed copy over the frame for a moment (basic filters only)
+        a, b = shake
+        amp = cfg.get("shake_pixels", 18)
+        fc += [f"{mv}split=2[sb][sj0]",
+               f"[sj0]crop=iw-{4 * amp}:ih-{4 * amp}:x='{2 * amp}+{amp}*sin(t*83)':y='{2 * amp}+{amp}*cos(t*67)',"
+               f"scale=1080:1920,setsar=1[sj]",
+               f"[sb][sj]overlay=0:0:enable='between(t,{a},{b})'[shk]"]
+        mv = "[shk]"
+    if freeze:  # hold the payoff frame (sound paused) then carry on
+        t, f = freeze
+        fc += [f"{mv}split=3[fa0][fb0][fc0]",
+               f"[fa0]trim=0:{t},setpts=PTS-STARTPTS[fa]",
+               f"[fb0]trim=start={t}:duration=0.04,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={f}[fb]",
+               f"[fc0]trim=start={t + 0.04},setpts=PTS-STARTPTS[fc]",
+               f"{ma}asplit=2[xa0][xc0]",
+               f"[xa0]atrim=0:{t},asetpts=PTS-STARTPTS[xa]",
+               f"anullsrc=r=48000:cl=stereo,atrim=0:{f + 0.04},asetpts=PTS-STARTPTS[xb]",
+               f"[xc0]atrim=start={t + 0.04},asetpts=PTS-STARTPTS[xc]",
+               "[xa]aresample=48000,aformat=channel_layouts=stereo[xa1]",
+               "[xc]aresample=48000,aformat=channel_layouts=stereo[xc1]",
+               "[fa][xa1][fb][xb][fc][xc1]concat=n=3:v=1:a=1[frz][frza]"]
+        mv, ma = "[frz]", "[frza]"
     if p["replay"]:
         a, b = p["replay"]
-        fc += [f"[0:v]split=2[m][r0]", f"[r0]trim={a}:{b},setpts=(PTS-STARTPTS)/{speed}[r]",
-               f"[0:a]asplit=2[ma][ra0]", f"[ra0]atrim={a}:{b},asetpts=PTS-STARTPTS,atempo={speed}[ra]",
-               "[m][ma][r][ra]concat=n=2:v=1:a=1[v][a0]"]
+        fc += [f"[r0]trim={a}:{b},setpts=(PTS-STARTPTS)/{speed}[r]",
+               f"[ra0]atrim={a}:{b},asetpts=PTS-STARTPTS,atempo={speed},aresample=48000,"
+               f"aformat=channel_layouts=stereo[ra]",
+               f"{ma}aresample=48000,aformat=channel_layouts=stereo[ma1]",
+               f"{mv}[ma1][r][ra]concat=n=2:v=1:a=1[v][a0]"]
         vlabel, alabel = "[v]", "[a0]"
+    else:
+        vlabel, alabel = mv, ma
     mix = [alabel]
     for name, idx, times, vol in (("i", 1, p["impacts"], cfg.get("impact_volume", 0.9)),
                                   ("w", 2, p["whooshes"], cfg.get("whoosh_volume", 0.5))):
@@ -198,8 +255,8 @@ def pass2_cmd(main, out, p, impact_path, whoosh_path, cfg):
         alabel = "[a]"
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(main),
            "-i", str(impact_path), "-i", str(whoosh_path), "-filter_complex", ";".join(fc),
-           "-map", vlabel if p["replay"] else "0:v", "-map", alabel]
-    cmd += (["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"] if p["replay"]
+           "-map", vlabel if reencode else "0:v", "-map", alabel]
+    cmd += (["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"] if reencode
             else ["-c:v", "copy"])
     cmd += ["-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-movflags", "+faststart", str(out)]
     return cmd

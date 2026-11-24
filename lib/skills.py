@@ -23,10 +23,10 @@ SKILLS = {
     "layout_blur": ("blurred-background layout", lambda f: f.get("layout") == "blurred_background", True),
     "layout_fill": ("full-screen crop", lambda f: f.get("layout") == "full_vertical", True),
     "layout_black": ("black bars", lambda f: f.get("layout") == "black_bars", True),
+    "screen_shake": ("screen shake", lambda f: f.get("screen_shake") is True, True),      # experiment
+    "freeze_frame": ("freeze frame", lambda f: f.get("freeze_frame") is True, True),      # experiment
     # not built yet
     "split_screen_facecam": ("split-screen facecam", lambda f: f.get("layout") == "split_screen_facecam", False),
-    "screen_shake": ("screen shake", lambda f: f.get("screen_shake") is True, False),
-    "freeze_frame": ("freeze frame", lambda f: f.get("freeze_frame") is True, False),
     "slow_motion": ("slow motion inside the clip", lambda f: f.get("slow_motion") is True, False),
     "emoji_or_stickers": ("emoji / sticker pop-ups", lambda f: f.get("emoji_or_stickers") is True, False),
     "loop_ending": ("loop ending", lambda f: f.get("loop_ending") is True, False),

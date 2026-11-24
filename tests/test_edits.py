@@ -30,7 +30,8 @@ def test_plan_all_effects():
 
 def test_plan_nothing_on():
     p = edits.plan(14.0, 9.25, [4.0], {}, CFG)
-    assert p == {"end": 14.0, "zooms": [], "replay": None, "impacts": [], "whooshes": [], "payoff": 9.25}
+    assert p == {"end": 14.0, "zooms": [], "replay": None, "impacts": [], "whooshes": [], "payoff": 9.25,
+                 "shake": None, "freeze": None}
     assert edits.pass2_cmd("a", "b", p, "i", "w", CFG) is None
 
 
@@ -56,3 +57,21 @@ def test_pass2():
     p = edits.plan(14.0, 9.25, [4.0], ALL, CFG)
     cmd = " ".join(edits.pass2_cmd("m.mp4", "o.mp4", p, "i.wav", "w.wav", CFG))
     assert "atempo=0.5" in cmd and "concat=n=2" in cmd and "adelay=9250|9250" in cmd
+
+
+def test_shake_and_freeze_plan_and_cmd():
+    p = edits.plan(14.0, 9.25, [4.0], {"shake": True, "freeze": True, "whoosh": True, "zoom": True,
+                                       "impact": True}, CFG)
+    assert p["shake"] == (9.25, 9.65) and p["freeze"] == (9.25, 0.6)
+    assert p["impacts"] == [9.25]                       # impact lands as the frame freezes
+    cmd = " ".join(edits.pass2_cmd("m.mp4", "o.mp4", p, "i.wav", "w.wav", CFG))
+    assert "tpad=stop_mode=clone:stop_duration=0.6" in cmd and "enable='between(t,9.25,9.65)'" in cmd
+    assert "libx264" in cmd                              # re-encoded, not copied
+    assert {"shake", "freeze"} <= set(edits.tags(p))
+
+
+def test_experiment_flags_are_stable_and_about_half():
+    on = [edits.experiment_flags({}, f"2026-11-25-{i:02d}", {"shake": 0.5})["shake"] for i in range(200)]
+    assert 70 < sum(on) < 130
+    assert edits.experiment_flags({}, "x-1", {"shake": 0.5}) == edits.experiment_flags({}, "x-1", {"shake": 0.5})
+    assert edits.experiment_flags({}, "x-1", {"shake": 0})["shake"] is False

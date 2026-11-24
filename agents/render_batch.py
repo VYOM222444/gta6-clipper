@@ -278,7 +278,8 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
         used = remove_music(src, work, ecfg)
     if ecfg and has_audio:
         payoff, hits = edits.analyze(load_audio(used))
-        plan = edits.plan(dur, payoff, hits, ecfg["flags"], ecfg)
+        flags = edits.experiment_flags(ecfg["flags"], row["batch_id"], ecfg.get("experiments"))
+        plan = edits.plan(dur, payoff, hits, flags, ecfg)
         plan["source_end"] = dur
     words, lang = transcriber.words(used) if has_audio else ([], "")
     words = render.mask_words(words, load_rules().get("captions", {}).get("mask_words", []))

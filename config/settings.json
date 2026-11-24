@@ -172,7 +172,15 @@
       "replay_speed": 0.5,
       "impact_volume": 0.9,
       "whoosh_volume": 0.5,
-      "rest_volume": 0.3
+      "rest_volume": 0.3,
+      "experiments": {
+        "shake": 0.5,
+        "freeze": 0.5
+      },
+      "_experiments_note": "Skills under test: each goes on this share of clips at random (stable per clip); template_version tags (shake/freeze) let the Analyst compare our own posts with vs without.",
+      "shake_seconds": 0.4,
+      "shake_pixels": 18,
+      "freeze_seconds": 0.6
     },
     "style_defaults": {
       "_note": "Used until the Researcher has enough analysed winners; then Playbook style.* rows decide (lib/style.py).",
