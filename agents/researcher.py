@@ -43,6 +43,7 @@ from datetime import datetime, timedelta, timezone
 from agents.scout import parse_iso_duration, title_ok
 from lib import keywords, sheets
 from lib import style as clip_style
+from lib.baselines import Baselines, breakout
 from lib.config import REPO_ROOT, load_rules, load_settings
 from lib.gemini import BudgetReached, Gemini, GeminiError, Transient, Usage
 from lib.schema import TABS
@@ -151,6 +152,13 @@ def parse_time(s):
 
 # --- 1. collect ----------------------------------------------------------------------------
 
+def breakout_score(views, ratio, cfg, floor_key="min_views"):
+    """Mainly how far the Short beat its OWN channel's normal; absolute views only break ties.
+    Shorts under the view floor can't rank high (a 300-view Short on a tiny channel isn't a hit)."""
+    s = math.log10(1 + min(max(ratio, 0), cfg.get("cap", 100))) + 0.15 * math.log10(1 + max(views, 0))
+    return s - 3 if views < cfg.get(floor_key, 10000) else s
+
+
 def short_score(views, subs):
     """log views, plus up to +0.5 for beating the channel's size (small channels that pop)."""
     s = math.log10(1 + max(views, 0))
@@ -177,8 +185,9 @@ def label_cohort(rows, cfg):
     return ranked
 
 
-def build_rows(videos, channels, rules, cfg, now):
+def build_rows(videos, channels, rules, cfg, now, baselines=None):
     sc = rules["scout"]
+    bcfg = cfg.get("baseline", {})
     subs_of = {}
     for c in channels:
         st = c.get("statistics", {})
@@ -197,13 +206,17 @@ def build_rows(videos, channels, rules, cfg, now):
         views = int(st.get("viewCount", 0) or 0)
         subs = subs_of.get(sn.get("channelId"))
         desc = sn.get("description", "")
+        med = baselines.median(sn.get("channelId"), v["id"], bcfg.get("min_shorts", 3)) if baselines else None
+        ratio, source = breakout(views, med, subs, bcfg)
         rows.append({
             "research_id": v["id"], "video_id": v["id"], "url": f"https://youtube.com/shorts/{v['id']}",
             "views": views, "age_days": round(age_d, 1), "length_s": dur, "title": title,
             "hashtags": " ".join("#" + h for h in dict.fromkeys(HASHTAG.findall(title + " " + desc))),
             "channel_title": sn.get("channelTitle", ""), "subscribers": "" if subs is None else subs,
             "published_at": sn.get("publishedAt", ""), "collected_at": iso(now),
-            "score": round(short_score(views, subs), 3),
+            "score": round(breakout_score(views, ratio, bcfg), 3),
+            "channel_median_views": "" if med is None else int(med),
+            "breakout": round(ratio, 2), "baseline_source": source,
             "credits": " ".join("@" + h for h in dict.fromkeys(HANDLE.findall(desc)))[:200],
         })
     return rows
@@ -228,8 +241,26 @@ def collect(yt, settings, rules, now):
     videos = yt.videos(ids, parts="snippet,statistics,contentDetails") if ids else []
     ch = {v["snippet"]["channelId"] for v in videos}
     channels = yt.channels(ch, parts="statistics") if ch else []
-    rows = label_cohort(build_rows(videos, channels, rules, cfg, now), cfg)
+    bl = refresh_baselines(yt, ch, now, cfg, notes)
+    rows = label_cohort(build_rows(videos, channels, rules, cfg, now, bl), cfg)
     return rows, notes, len(ids)
+
+
+def refresh_baselines(yt, channel_ids, now, cfg, notes):
+    """Each channel's normal Short views (cached in data/channel_baselines.json). Gets its own
+    extra quota budget on top of the run's."""
+    bcfg = cfg.get("baseline", {})
+    bl = Baselines()
+    if not bcfg.get("enabled", True) or not channel_ids:
+        return bl
+    before = yt.used
+    yt.budget += bcfg.get("run_budget_units", 600)
+    n, more = bl.refresh(yt, channel_ids, now, bcfg, parse_iso_duration)
+    notes += more
+    if n:
+        notes.append(f"channel baselines: {n} refreshed ({yt.used - before} units), {len(bl.data)} cached")
+        bl.save()
+    return bl
 
 
 # --- 1b. collect (fresh tier: 0-72 h) ------------------------------------------------------------
@@ -268,22 +299,22 @@ def label_fresh(rows, fcfg, cfg):
     return rows
 
 
-def build_fresh_rows(videos, channels, rules, cfg, now):
+def build_fresh_rows(videos, channels, rules, cfg, now, baselines=None):
     """Like build_rows, but for Shorts <= max_age_hours old; score uses views per hour."""
     fcfg = cfg["fresh"]
     out = []
-    for r in build_rows(videos, channels, rules, cfg, now):
+    bcfg = cfg.get("baseline", {})
+    for r in build_rows(videos, channels, rules, cfg, now, baselines):
         age_h = (now - parse_time(r["published_at"])).total_seconds() / 3600
         if age_h > fcfg.get("max_age_hours", 72) or age_h < fcfg.get("min_age_hours", 1):
             continue
         vph = r["views"] / max(age_h, 1.0)
-        subs = r["subscribers"] if r["subscribers"] != "" else None
-        bonus = short_score(r["views"], subs) - short_score(r["views"], None)
         fresh = {k: r[k] for k in ("research_id", "video_id", "url", "views", "age_days", "length_s",
                                    "title", "hashtags", "channel_title", "subscribers", "published_at",
-                                   "credits")}
+                                   "credits", "channel_median_views", "breakout", "baseline_source")}
+        # within an age bucket: how far it is already beating its channel's normal (total) views
         fresh.update({"age_h": age_h, "views_per_hour": round(vph, 1), "fresh_at": iso(now),
-                      "score": round(math.log10(1 + vph) + bonus, 3)})
+                      "score": round(breakout_score(r["views"], r["breakout"], bcfg, "fresh_min_views"), 3)})
         out.append(fresh)
     label_fresh(out, fcfg, cfg)
     for r in out:
@@ -326,7 +357,8 @@ def collect_fresh(yt, settings, rules, now, scout_ids=()):
     except QuotaExceeded as e:
         notes.append(str(e))
         return [], notes, len(ids), from_search
-    rows = build_fresh_rows(videos, channels, rules, cfg, now)
+    bl = refresh_baselines(yt, ch, now, cfg, notes)
+    rows = build_fresh_rows(videos, channels, rules, cfg, now, bl)
     return rows, notes, len(ids), from_search
 
 

@@ -56,5 +56,6 @@ TABS = {
         "channel_title", "subscribers", "published_at", "collected_at", "score", "features",
         "model", "credits",
         "fresh_label", "views_per_hour", "fresh_at",
+        "channel_median_views", "breakout", "baseline_source",
     ],
 }
