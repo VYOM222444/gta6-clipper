@@ -335,5 +335,14 @@
     "auto_discover": true,
     "uploads_per_channel": 50,
     "match_min": 0.75
+  },
+  "social": {
+    "enabled": true,
+    "instagram": true,
+    "facebook": true,
+    "veto_hours": 2,
+    "max_age_hours": 48,
+    "max_per_brand_per_run": 2,
+    "graph_version": "v25.0"
   }
 }

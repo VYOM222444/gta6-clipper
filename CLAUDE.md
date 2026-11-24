@@ -315,6 +315,27 @@ hand; normally `agents/decider.py` does this automatically):**
 `log_posts stats` -> discover: our 5 channels' uploads matched to Batch rows by title, so keep
 the title from the .txt). Only Instagram links (or a YouTube post whose title was changed a lot)
 need pasting. **When the owner pastes post links:** write `posts/<YYYY-MM-DD>.json`
+**Instagram + Facebook auto-post setup (once, on the laptop, ~30-40 min; `agents/post_social.py`):**
+1. Each brand's Instagram: Settings > Account type and tools > Switch to professional (Creator or
+   Business). Turn OFF "share reels to Facebook" (the API posts to Facebook itself).
+2. One Facebook Page per brand (facebook.com/pages/create), linked to that Instagram account
+   (Page > Settings > Linked accounts > Instagram).
+3. developers.facebook.com > My Apps > Create app (type Business). Add "Instagram" (API setup with
+   Facebook login) and "Facebook Login for Business". The app can stay in Development mode (we
+   only post to our own accounts).
+4. Graph API Explorer: pick the app, "Get User Access Token" with pages_show_list,
+   pages_read_engagement, pages_manage_posts, publish_video, instagram_basic,
+   instagram_content_publish, business_management; tick all 5 Pages + Instagram accounts.
+5. Access Token Debugger: paste the token > "Extend Access Token" (long-lived).
+6. Back in Explorer with that token: GET `me/accounts?fields=name,id,access_token,instagram_business_account`.
+   Each Page's access_token does not expire.
+7. GitHub > Settings > Secrets > Actions > New secret `META_TOKENS_JSON`:
+   `{"wasted_again": {"ig_user_id": "<instagram_business_account id>", "page_id": "<Page id>", "token": "<Page access_token>"}, ...}`
+   for all 5 brands. Never paste tokens in chat.
+8. Google Drive: share the "GTA6 Clipper" folder with the service account email as Viewer.
+9. Actions > Social post > Run workflow with "dry run" ticked: the log lists what would post.
+
+**Logging posts (when the owner pastes post links):** write `posts/<YYYY-MM-DD>.json`
 (format in `agents/log_posts.py`; one entry per clip per platform, URLs without tracking
 params), commit on branch `posts/<YYYY-MM-DD>` from main, push. The Log posts workflow
 fills the Posted tab; the Tracker workflow refreshes YouTube views of our posts every
@@ -736,3 +757,14 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   fake Google services. Built on the loudness PR (#41). 197 tests.
   Note: YouTube's quota page now lists search.list with its own bucket of 100 calls/day (1 unit
   each); Scout (8 x 4 runs) + Researcher + Gatekeeper stay under it, but don't add many searches.
+- 2026-11-24 (Instagram + Facebook auto-post): `agents/post_social.py` + `social.yml` (dispatched by
+  the Tracker every ~6 h, + manual with dry-run). Posts Batch rows with render_status=done,
+  approved != no, rendered >= `social.veto_hours` (2) ago and <= 48 h, max 2 per brand per run
+  (spreads ~5/day). MP4 read from Drive by the service account (`<batch_id>.mp4`; owner shares the
+  folder), uploaded by resumable upload (rupload.facebook.com; no public link): Instagram Reel
+  (container -> upload -> wait FINISHED -> media_publish -> permalink) and Facebook Page Reel
+  (video_reels start/upload/finish). Caption = ig_caption. Batch columns ig_status, ig_url,
+  fb_status, fb_url, social_at; Posted rows `<batch_id>-instagram/-facebook`. Token per brand in
+  secret META_TOKENS_JSON (Page tokens, no expiry; never printed, masked in errors). Does nothing
+  until the secret exists. A failed post retries next run; a published post whose link lookup
+  fails is still marked done (no double posts). Setup steps in section 10. 203 tests.
