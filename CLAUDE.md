@@ -671,3 +671,9 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   yet), style (summary of its Gemini tags). Fixed slots `<category>#<rank>` overwritten each run.
   Workflow: owner picks examples -> screen recording to chat -> Claude studies frames -> sample ->
   owner approves -> skill PR (experiment). 183 tests.
+- 2026-11-24 (example downloads): `agents/fetch_examples.py` + render notebook cell 6 (`EXAMPLES = 20`,
+  0 = skip): after the render, Colab downloads up to 20 Shorts from the Examples tab to Drive
+  `GTA6 Clipper/_examples/<date>/NN_<category>_<id>.mp4` + `_list.txt` (category, link, views,
+  breakout, style). Order: best example of each trick we can't do yet, then TOP breakouts, then the
+  rest; already-downloaded files skipped; stops on YouTube's bot check. For private study only
+  (never posted). Owner sends picks to Claude in chat -> skill. 193 tests.
