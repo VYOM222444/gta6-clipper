@@ -638,3 +638,15 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   `ModuleNotFoundError: numpy` (tests/test_edits.py). numpy is installed only in tests.yml
   (`numpy==2.5.3`), NOT in requirements.txt, so Colab keeps its own numpy. Lesson: check the
   Tests run after each merge (`gh run list -w tests.yml`).
+- 2026-11-24 (first gap report, live): 86 winners / 149 average (breakout labels): NO missing trick
+  is used clearly more by winners (all SKIP). Real differences: full-screen layout (86% of winners;
+  72 h: 70% vs 49%), shorter (median 29 s vs 36 s). Style now: fill layout, phrase captions middle,
+  hook on, no label, no keyword colour. Owner decided to build skills anyway and TEST them on our own
+  posts (build-measure-learn) instead of trusting other creators' data alone.
+- 2026-11-24 (skills as experiments): `settings.render.edits.experiments` = {skill: share};
+  `edits.experiment_flags` puts each skill on a stable random share of clips (sha1 of batch_id +
+  skill), tags in template_version (shake / freeze) so the Analyst can compare our own posts with vs
+  without. First skills in pass 2: screen shake (0.4 s jittered crop overlay at the payoff, 18 px,
+  basic filters) and freeze frame (payoff frame held 0.6 s with silence; impact on the freeze; later
+  whooshes/impacts shifted). Both 50%. lib/skills.py marks them have=True. Sample rendered (test
+  pattern) and sent to the owner for review before merge. 181 tests.
