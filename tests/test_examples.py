@@ -6,15 +6,24 @@ def e(i, breakout, **f):
              "views": "1000", "channel_title": "c"}, f)
 
 
-def test_lists_per_trick_best_breakouts_first_with_fixed_slots():
-    entries = [e(1, 3, screen_shake=True), e(2, 12, screen_shake=True, layout="full_vertical"),
-               e(3, 7, emoji_or_stickers=True)]
-    recs = {r["example_id"]: r for r in examples.build(entries, "now")}
-    assert recs["TOP breakouts (any style)#1"]["url"].endswith("v2")
-    assert recs["screen shake#1"]["url"].endswith("v2") and recs["screen shake#2"]["url"].endswith("v1")
-    assert recs["screen shake#3"]["url"] == "" and recs["screen shake#3"]["have_skill"] == ""
-    assert recs["emoji / sticker pop-ups#1"]["have_skill"] == "no"
-    assert "full vertical" in recs["screen shake#1"]["style"] and "shake" in recs["screen shake#1"]["style"]
+def test_viral_tricks_ranked_by_lift_and_need_real_use():
+    win = [{"screen_shake": True, "emoji_or_stickers": True}] * 6 + [{"screen_shake": True}] * 4
+    avg = [{"screen_shake": True}] * 3 + [{}] * 7
+    hot = examples.viral_tricks(win, avg)
+    assert [t["key"] for t in hot[:2]] == ["screen_shake", "emoji_or_stickers"]   # +70 vs +60 points
+    assert all(t["w"] >= 0.15 and t["lift"] > 0 for t in hot)
+
+
+def test_ten_examples_per_trick_best_breakouts_first_fixed_slots():
+    entries = [e(i, i, screen_shake=True) for i in range(1, 13)] + [e(99, 50, emoji_or_stickers=True)]
+    hot = examples.viral_tricks([x[1] for x in entries], [{}] * 10)
+    recs = {r["example_id"]: r for r in examples.build(entries, hot, "now", tricks=2, per=10, top=3)}
+    t1 = "trick1" if hot[0]["key"] == "screen_shake" else "trick2"
+    assert recs[f"{t1}#1"]["url"].endswith("v12") and recs[f"{t1}#10"]["url"].endswith("v3")
+    assert recs["top#1"]["url"].endswith("v99") and recs["top#1"]["have_skill"] == ""
+    assert "winners" in recs["trick1#1"]["trick_use"]
+    empty = examples.build([], [], "now", tricks=1, per=2, top=1)
+    assert len(empty) == 3 and all(r["url"] == "" for r in empty)
 
 
 def test_describe():

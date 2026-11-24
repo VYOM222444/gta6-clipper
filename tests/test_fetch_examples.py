@@ -1,16 +1,14 @@
 from agents import fetch_examples as fe
 
 
-def r(cat, rank, url, have="yes"):
-    return {"category": cat, "rank": str(rank), "url": url, "have_skill": have}
+def r(cat, rank, url, trick=""):
+    return {"category": cat, "rank": str(rank), "url": url, "trick_rank": str(trick)}
 
 
-def test_pick_order_missing_skills_first_then_top_unique():
-    rows = [r(fe.TOP, 1, "u1"), r(fe.TOP, 2, "u2"), r("emoji / sticker pop-ups", 1, "u3", "no"),
-            r("loop ending", 1, "u1", "no"), r("zoom punch-ins", 1, "u4"), r("emoji / sticker pop-ups", 2, "u5", "no"),
-            r("screen shake", 1, "")]
-    urls = [x["url"] for x in fe.pick(rows, 10)]
-    assert urls == ["u3", "u1", "u2", "u5", "u4"]
+def test_pick_trick1_first_then_trick2_then_top_unique():
+    rows = [r(fe.TOP, 1, "u1"), r("screen shake", 2, "u3", 1), r("screen shake", 1, "u2", 1),
+            r("emoji / sticker pop-ups", 1, "u2", 2), r("emoji / sticker pop-ups", 2, "u4", 2), r("x", 1, "", 3)]
+    assert [x["url"] for x in fe.pick(rows, 10)] == ["u2", "u3", "u4", "u1"]
     assert len(fe.pick(rows, 2)) == 2
 
 

@@ -1,7 +1,7 @@
 """Download the top example Shorts from the Examples tab to Google Drive (Colab only).
 
 The owner downloads them from Drive and sends them to Claude in chat to build new editing skills.
-Order: TOP breakouts first, then the best example of each trick we CAN'T do yet, then the rest.
+Order: the 10 examples of viral trick #1, then trick #2, ... then TOP breakouts.
 Saved to <output_dir>/_examples/<date>/NN_<category>_<video_id>.mp4 + _list.txt (what each is).
 Never fails the render run: any problem is printed and skipped.
 
@@ -28,16 +28,21 @@ def _rank(r):
         return 99
 
 
+def _int(v, d=99):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return d
+
+
 def pick(rows, n):
-    """Ordered unique picks: TOP list, then rank-1 of tricks we can't do, then the rest."""
+    """Ordered unique picks: all examples of viral trick #1, then #2, ... then TOP breakouts."""
     rows = [r for r in rows if r.get("url")]
+    tricks = sorted([r for r in rows if r.get("category") != TOP],
+                    key=lambda r: (_int(r.get("trick_rank")), _rank(r)))
     top = sorted([r for r in rows if r.get("category") == TOP], key=_rank)
-    missing = sorted([r for r in rows if r.get("category") != TOP and r.get("have_skill") == "no"],
-                     key=lambda r: (_rank(r), r.get("category", "")))
-    rest = sorted([r for r in rows if r.get("category") != TOP and r.get("have_skill") != "no"],
-                  key=lambda r: (_rank(r), r.get("category", "")))
     out, seen = [], set()
-    for r in [x for x in missing if _rank(x) == 1] + top + missing + rest:
+    for r in tricks + top:
         if r["url"] not in seen:
             out.append(r)
             seen.add(r["url"])
@@ -56,7 +61,7 @@ def slug(text):
 
 
 def main():
-    n = int(os.environ.get("CLIPPER_EXAMPLES", "20") or 0)
+    n = int(os.environ.get("CLIPPER_EXAMPLES", "30") or 0)
     if n <= 0:
         print("Examples: skipped (CLIPPER_EXAMPLES=0).")
         return 0
@@ -79,9 +84,10 @@ def main():
     listing, got = [], 0
     for i, r in enumerate(picks, start=1):
         vid = video_id(r["url"])
-        name = f"{i:02d}_{slug(r.get('category'))}_{vid}.mp4"
+        tag = f"trick{r.get('trick_rank')}-{slug(r.get('category'))}" if r.get("trick_rank") else "top"
+        name = f"{i:02d}_{tag}_{vid}.mp4"
         path = folder / name
-        listing.append(f"{name}\n  {r.get('category')} #{r.get('rank')} | we can do it: {r.get('have_skill')}\n"
+        listing.append(f"{name}\n  {r.get('category')} #{r.get('rank')} | {r.get('trick_use')} | we can do it: {r.get('have_skill')}\n"
                        f"  {r['url']} | {r.get('views')} views, {r.get('breakout')}x its channel\n"
                        f"  style: {r.get('style')}\n")
         if path.exists():
