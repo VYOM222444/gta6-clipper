@@ -72,3 +72,41 @@ def test_fit_size_and_fill_layout():
     assert render.fit_size("SHORT", 104) == 104
     assert render.fit_size("A VERY LONG CAPTION LINE HERE", 104) < 104
     assert render.layout_boxes(1920, 1080, {"layout": "fill"}) == (1080, 1920, 0)
+
+
+def test_clip_length_cap_from_winners():
+    from lib import style
+    cap, why = style.clip_length([20, 25, 28, 29, 30, 31, 33, 40], [36, 40, 45])
+    assert 30 <= cap <= 35 and "median" in why
+    assert style.clip_length([20, 30], [])[0] is None
+    assert style.clip_length([100] * 10, [])[0] == 60
+    assert style.clip_length([5] * 10, [])[0] == 15
+
+
+def test_apply_length_caps_every_type():
+    from lib import style
+    rules = {"clip_length_seconds": {"news": [20, 40], "chaos": [15, 30]},
+             "watcher": {"clip_min_seconds": 12, "clip_max_seconds": 45}}
+    row = style.length_row(28, "x", "s", "t")
+    out, cap = style.apply_length(rules, [row])
+    assert cap == 28
+    assert out["clip_length_seconds"]["news"] == [20, 28]
+    assert out["clip_length_seconds"]["chaos"] == [15, 28]
+    assert out["watcher"]["clip_max_seconds"] == 28
+    assert rules["clip_length_seconds"]["news"] == [20, 40]  # original untouched
+    out2, cap2 = style.apply_length(rules, [style.length_row(None, "x", "s", "t")])
+    assert cap2 is None and out2 is rules
+    out3, _ = style.apply_length(rules, [style.length_row(20, "x", "s", "t")])
+    assert out3["clip_length_seconds"]["news"] == [15, 20]
+
+
+def test_researcher_length_rows():
+    from datetime import datetime, timezone
+    from agents import researcher
+    from lib.config import load_settings
+    now = datetime(2026, 11, 24, tzinfo=timezone.utc)
+    rows = [{"label": "winner", "length_s": n, "collected_at": "2026-11-23T00:00:00Z"} for n in range(22, 32)]
+    rows += [{"label": "average", "length_s": 40, "collected_at": "2026-11-23T00:00:00Z"}]
+    rows += [{"label": "winner", "length_s": 90, "collected_at": "2026-11-01T00:00:00Z"}]  # too old
+    r = researcher.length_rows(rows, load_settings(), now)[0]
+    assert r["rule_id"] == "style.clip_max_seconds" and 28 <= int(r["value"]) <= 31

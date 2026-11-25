@@ -745,6 +745,35 @@ def style_rows(rows, settings, now):
     return clip_style.playbook_rows(st, why, ex, src, iso(now))
 
 
+def length_groups(rows, settings, now):
+    """Lengths (s) of 7-day winners + rising fresh Shorts, and of average ones (no Gemini tags needed)."""
+    cfg, fcfg = settings["researcher"], settings["researcher"]["fresh"]
+    week, fresh_win = timedelta(days=cfg.get("window_days", 7)), timedelta(hours=fcfg.get("window_hours", 72))
+    win, avg = [], []
+    for r in rows:
+        try:
+            n = float(r.get("length_s") or 0)
+        except (TypeError, ValueError):
+            continue
+        if n <= 0:
+            continue
+        t, ft = parse_time(r.get("collected_at")), parse_time(r.get("fresh_at"))
+        recent, fresh = t and now - t <= week, ft and now - ft <= fresh_win
+        if (recent and r.get("label") == "winner") or (fresh and r.get("fresh_label") == "rising"):
+            win.append(n)
+        elif (recent and r.get("label") == "average") or (fresh and r.get("fresh_label") == "fresh_average"):
+            avg.append(n)
+    return win, avg
+
+
+def length_rows(rows, settings, now):
+    """style.clip_max_seconds: the longest clip we make = how long winning Shorts are."""
+    win, avg = length_groups(rows, settings, now)
+    cap, why = clip_style.clip_length(win, avg, settings["researcher"].get("min_group", 8))
+    src = f"researcher length {now.date().isoformat()}"
+    return [clip_style.length_row(cap, why, src, iso(now))]
+
+
 def gap_rows(rows, settings, now):
     """gaps.* Playbook rows: editing tricks ranked by how much more winners use them (lib/skills.py)."""
     cfg = settings["researcher"]
@@ -850,7 +879,7 @@ def main(argv=None):
             msgs.append(f"right now: {src}")
         for m in msgs:
             print(f"Findings {m}.")
-        sp = style_rows(records, settings, now)
+        sp = style_rows(records, settings, now) + length_rows(records, settings, now)
         gp = gap_rows(records, settings, now)
         hot, basis = viral_tricks_now(records, settings, now)
         ecfg = settings["researcher"].get("examples", {})

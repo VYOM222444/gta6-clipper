@@ -701,3 +701,8 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   uploads -> matched to that brand's unlogged Batch rows by normalised title (difflib >= 0.75,
   hashtags/emoji ignored, not before the batch day) -> Posted rows `<batch_id>-youtube`. ~15
   units/run. Owner no longer pastes YouTube links; Instagram still by hand until the Meta API.
+- 2026-11-24 (clip length from winners): Researcher findings write Playbook `style.clip_max_seconds`
+  = 75th percentile length of 7-day winners + rising fresh Shorts (needs >= 8, clamped 15-60 s;
+  from Research `length_s`, no Gemini needed). Watcher caps every content type's clip length at it
+  (`style.apply_length`, min = max - 5 when needed) and tells Gemini the shorter lengths. Moments
+  found before the cap keep their length. 198 tests.

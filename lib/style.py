@@ -142,3 +142,52 @@ def tag(style):
              "label" if style.get("title_label") else "nolabel",
              str(style.get("layout", "blur"))]
     return ",".join(parts)
+
+
+# --- clip length (winners' typical length) -----------------------------------------------------
+
+def clip_length(win_lengths, avg_lengths, min_n=8, lo=15, hi=60):
+    """Longest clip we should make, from how long winning Shorts are.
+    Returns (max_seconds or None, reason). max = 75th percentile of winners' lengths, so most
+    winners fit inside it; clamped to [lo, hi]."""
+    w = sorted(float(x) for x in win_lengths if x)
+    if len(w) < min_n:
+        return None, f"not enough winners with a length ({len(w)} < {min_n})"
+    q = statistics.quantiles(w, n=4)  # q[1] = median, q[2] = 75th percentile
+    cap = int(round(min(hi, max(lo, q[2]))))
+    a = [float(x) for x in avg_lengths if x]
+    avg = f", average Shorts median {round(statistics.median(a))} s" if a else ""
+    return cap, f"winners median {round(q[1])} s, 75% are <= {round(q[2])} s{avg} (n={len(w)})"
+
+
+def length_row(cap, reason, source, updated_at):
+    shown = f"{cap} s" if cap else "no cap (default lengths)"
+    return {"rule_id": "style.clip_max_seconds", "section": "style",
+            "rule": f"clip_max_seconds: {shown} ({reason})", "value": json.dumps(cap),
+            "source": source, "updated_at": updated_at}
+
+
+def apply_length(rules, playbook_rows, min_gap=5):
+    """Copy of rules with every content type's clip length capped at the winners' length
+    (Playbook style.clip_max_seconds). No row / no value -> rules unchanged."""
+    cap = None
+    for r in playbook_rows or []:
+        if r.get("rule_id") == "style.clip_max_seconds":
+            try:
+                cap = json.loads(r.get("value") or "null")
+            except (TypeError, ValueError):
+                cap = None
+    if not cap:
+        return rules, None
+    out = dict(rules)
+    lengths = {}
+    for t, (a, b) in (rules.get("clip_length_seconds") or {}).items():
+        b2 = min(b, cap)
+        lengths[t] = [min(a, max(8, b2 - min_gap)), b2]
+    out["clip_length_seconds"] = lengths
+    w = dict(rules.get("watcher", {}))
+    if "clip_max_seconds" in w:
+        w["clip_max_seconds"] = min(w["clip_max_seconds"], cap)
+        w["clip_min_seconds"] = min(w.get("clip_min_seconds", 8), max(8, w["clip_max_seconds"] - min_gap))
+    out["watcher"] = w
+    return out, cap

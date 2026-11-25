@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 from agents.scout import title_ok
 from lib import sheets
+from lib import style as clip_style
 from lib.config import load_blocklist, load_rules, load_settings
 from lib.gemini import BudgetReached, Gemini, GeminiError, Transient, video_parts
 from lib.schema import TABS
@@ -308,11 +309,18 @@ def main():
         moments = sheets.read_records(mom_ws)
         candidates = sheets.read_records(cand_ws)
         batch = sheets.read_records(ss.worksheet("Batch"))
+        try:
+            playbook = sheets.read_records(ss.worksheet("Playbook"))
+        except Exception:  # no Playbook yet: default lengths
+            playbook = []
         posted = sheets.read_records(ss.worksheet("Posted"))
     except sheets.SheetSetupError as e:
         print(f"WATCHER FAILED (sheet): {e}")
         return 1
 
+    rules, cap = clip_style.apply_length(rules, playbook)
+    if cap:
+        print(f"Clip length: max {cap} s (winning Shorts' length, Playbook style.clip_max_seconds).")
     try:
         gem = Gemini(wcfg["models"], wcfg["daily_budget"], "watcher",
                      retry_wait=rules["watcher"].get("retry_wait_seconds", 45),
