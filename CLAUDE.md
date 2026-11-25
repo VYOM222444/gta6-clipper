@@ -775,3 +775,10 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   renderer took rows oldest first, so a render would spend its time on stale moments. `to_render` now
   sorts newest batch day first and skips batches older than `render.max_batch_age_days` (1 = today +
   yesterday); older unrendered rows simply stay unrendered. 212 tests.
+- 2026-11-25 (skills on every clip): owner decided: once a skill is built it goes on ALL clips it fits
+  (no 50/50 split); he judges skills from our own analytics over time + other creators' clips
+  (Researcher). `render.edits.experiments` shake/freeze = 1.0, `reframe.split_share` = 1.0 (every
+  facecam clip gets split-screen). New skills: add them at 1.0. The experiment report now in effect
+  compares clips with a skill vs older clips without it (before/after), so read it with that in mind.
+  The "auto shares" idea (verdicts setting 10-90%) was dropped before merge. Owner will start posting
+  again once the current viral editing skills are built; old unrendered batches are skipped (#44).
