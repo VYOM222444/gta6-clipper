@@ -1,6 +1,9 @@
 """Log posted clips and keep their YouTube numbers up to date -> `Posted` tab.
 
-Two jobs (both safe to re-run):
+Three jobs (all safe to re-run):
+  discover  finds new uploads on OUR 5 YouTube channels (settings.brands[].youtube handles) and
+         matches each to a Batch row of that brand by title (fuzzy, >= posts.match_min) ->
+         Posted rows, so the owner no longer pastes YouTube links. ~3 units per brand.
   log    posts/<date>.json (written by Claude from the links the owner pastes in chat)
          -> one Posted row per clip per platform (post_id = <batch_id>-<platform>).
          moment_id comes from the Batch tab. Existing rows keep their numbers.
@@ -17,8 +20,9 @@ posts/<date>.json format:
  "posts": [{"batch_id": "2026-11-16-01", "brand": "neon_getaway",
             "platform": "youtube", "url": "https://youtube.com/shorts/ID"}]}
 
-Run:  python -m agents.log_posts [log|stats|all]   (default all)
+Run:  python -m agents.log_posts [log|discover|stats|all]   (stats also runs discover)   (default all)
 """
+import difflib
 import glob
 import json
 import re
@@ -112,6 +116,71 @@ def update_stats(row, video, now):
     return upd
 
 
+def norm_title(t):
+    t = re.sub(r"#\w+", " ", str(t).lower())
+    return " ".join(re.sub(r"[^0-9a-z\u0900-\u097f]+", " ", t).split())
+
+
+def match_uploads(uploads, batch_rows, brand, posted_rows, min_ratio=0.75):
+    """Posted rows for uploads of one brand's channel that match an unlogged Batch row's title.
+    uploads: videos.list items (snippet). Greedy: best title match first; each side used once."""
+    logged_ids = {str(p.get("platform_id")) for p in posted_rows if p.get("platform") == "youtube"}
+    logged_batches = {str(p.get("batch_id")) for p in posted_rows if p.get("platform") == "youtube"}
+    open_rows = [b for b in batch_rows if b.get("brand") == brand and b.get("title")
+                 and str(b.get("batch_id")) not in logged_batches
+                 and str(b.get("approved", "yes")).lower() != "no"]
+    pairs = []
+    for v in uploads:
+        if v["id"] in logged_ids:
+            continue
+        sn = v.get("snippet", {})
+        pub = sn.get("publishedAt", "")
+        for b in open_rows:
+            day = str(b.get("batch_id"))[:10]
+            if pub and day and pub[:10] < day:  # can't be posted before its batch day (UTC vs IST: same or later)
+                continue
+            r = difflib.SequenceMatcher(None, norm_title(sn.get("title")), norm_title(b["title"])).ratio()
+            if r >= min_ratio:
+                pairs.append((r, v, b))
+    pairs.sort(key=lambda x: x[0], reverse=True)
+    used_v, used_b, out = set(), set(), []
+    for r, v, b in pairs:
+        if v["id"] in used_v or b["batch_id"] in used_b:
+            continue
+        used_v.add(v["id"])
+        used_b.add(b["batch_id"])
+        out.append({"post_id": f"{b['batch_id']}-youtube", "batch_id": b["batch_id"],
+                    "moment_id": b.get("moment_id", ""), "brand": brand, "platform": "youtube",
+                    "url": f"https://youtube.com/shorts/{v['id']}",
+                    "posted_at": v.get("snippet", {}).get("publishedAt", ""), "platform_id": v["id"]})
+    return out
+
+
+def discover(ws, yt, batch_rows, settings):
+    """New uploads on our own channels -> Posted rows. Returns (rows written, notes)."""
+    cfg = settings.get("posts", {})
+    posted = sheets.read_records(ws)
+    rows, notes = [], []
+    for b in settings["brands"]:
+        handle = b.get("youtube", "")
+        if not handle:
+            continue
+        cid = yt.channel_id_for_handle(handle)
+        if not cid:
+            notes.append(f"{handle}: channel not found")
+            continue
+        ids = yt.recent_uploads(cid, cfg.get("uploads_per_channel", 50))
+        uploads = yt.videos(ids, parts="snippet") if ids else []
+        found = match_uploads(uploads, batch_rows, b["key"], posted, cfg.get("match_min", 0.75))
+        unmatched = len([v for v in uploads if v["id"] not in {str(p.get("platform_id")) for p in posted}]) - len(found)
+        notes.append(f"{handle}: {len(uploads)} recent uploads, {len(found)} new matched"
+                     + (f", {unmatched} not matched to a batch clip" if unmatched > 0 else ""))
+        rows += found
+    if rows:
+        sheets.upsert_rows(ws, TABS[TAB], "post_id", rows, preserve=("posted_at",))
+    return len(rows), notes
+
+
 def log(ws, batch_rows, paths):
     rows = []
     for path in paths:
@@ -162,8 +231,13 @@ def main(argv=None):
             paths = sorted(glob.glob(str(REPO_ROOT / "posts" / "*.json")))
             upd, new = log(ws, sheets.read_records(ss.worksheet("Batch")), paths)
             print(f"Posted: {new} new, {upd} updated from {len(paths)} file(s).")
+        if what in ("stats", "all", "discover"):
+            yt = YouTube(budget_units=60)
+            n, notes = discover(ws, yt, sheets.read_records(ss.worksheet("Batch")), settings)
+            for note in notes:
+                print(f"  {note}")
+            print(f"Auto-logged {n} new YouTube post(s) from our channels.")
         if what in ("stats", "all"):
-            yt = YouTube(budget_units=20)
             n = stats(ws, yt, now)
             print(f"YouTube stats updated for {n} posts ({yt.used} quota units).")
             experiment_report(ss, ws, settings, now)
