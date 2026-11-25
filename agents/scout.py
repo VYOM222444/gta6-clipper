@@ -186,6 +186,7 @@ def build_candidates(videos, channels, found_by, watch_ids, block_ids, rules, no
             "title": sn.get("title", ""),
             "channel_id": cid,
             "channel_title": sn.get("channelTitle", ""),
+            "channel_handle": handle_of(ch),
             "published_at": sn["publishedAt"],
             "kind": kind,
             "duration_s": parse_iso_duration(v.get("contentDetails", {}).get("duration")),
@@ -236,6 +237,14 @@ def collect(yt, settings, rules, watchlist, now):
         except YouTubeError as e:
             notes.append(f"watchlist {c.get('name', c['channel_id'])} failed: {e}")
     return list(found_by), found_by, notes
+
+
+def handle_of(channel):
+    """'@handle' from a channels.list item (snippet.customUrl), or '' if the channel has none."""
+    h = str(channel.get("snippet", {}).get("customUrl") or "").strip()
+    if not h:
+        return ""
+    return h if h.startswith("@") else "@" + h
 
 
 def run(yt, settings, rules, watchlist, blocklist, now=None, hot_words=frozenset()):

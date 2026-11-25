@@ -706,3 +706,8 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   from Research `length_s`, no Gemini needed). Watcher caps every content type's clip length at it
   (`style.apply_length`, min = max - 5 when needed) and tells Gemini the shorter lengths. Moments
   found before the cap keep their length. 198 tests.
+- 2026-11-24 (@handles): Scout saves the channel's @handle (channels.list snippet.customUrl, no
+  extra quota) in new Candidates column `channel_handle`. Decider credits `@handle` when known
+  (YouTube links it): description "🎥 Clip from @handle (Channel Name)", ig_caption
+  "🎥 Channel Name (@handle on YouTube)" (no bare @ on Instagram: it would tag a random IG account);
+  renderer overlay "via @handle". Falls back to the channel name.
