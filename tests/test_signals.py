@@ -194,3 +194,26 @@ def test_loudness_peaks_finds_bursts():
     assert all(x["signal"] == "loud" for x in w)
     assert merge_windows(w, cfg)  # 'loud' has points
     assert loudness_peaks([-40.0] * 30, cfg) == []
+def test_apps_script_reaction_words_match_rules():
+    import json
+    import re
+    from lib.config import REPO_ROOT, load_rules
+    gs = (REPO_ROOT / "tools" / "apps_script_trigger.gs").read_text(encoding="utf-8")
+    words = json.loads(re.search(r"var REACTION_WORDS = (\[.*?\]);", gs).group(1))
+    assert words == load_rules()["signals"]["reaction_words"]
+
+
+def test_live_chat_counts_make_spikes():
+    from agents.signals import analyse, live_chat_counts, pick_videos
+    from lib.config import load_rules
+    rules = load_rules()
+    cfg = rules["signals"]
+    rows = [{"video_id": "V1", "bin_s": b * 10, "reactions": 2, "messages": 20} for b in range(60)]
+    rows.append({"video_id": "V1", "bin_s": 300, "reactions": 30, "messages": 80})  # same bin, adds up
+    counts = live_chat_counts(rows, cfg)
+    assert counts["V1"][30] == 32
+    merged = analyse({"duration_s": 600}, None, [], [], cfg, live_counts=counts["V1"])
+    assert merged and merged[0]["start"] == 300 - cfg["chat_lead_seconds"] and "chat" in merged[0]["signals"]
+    cand = [{"video_id": "V1", "kind": "live_vod", "duration_s": 7200, "title": "GTA 6 live stream", "score": 1,
+             "status": "new"}]
+    assert pick_videos(cand, [], rules, "api", live=frozenset({"V1"}))

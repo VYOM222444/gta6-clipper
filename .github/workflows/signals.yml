@@ -6,6 +6,11 @@ name: Signals
 # ~1 YouTube unit per video. After every run it starts the Watcher.
 on:
   workflow_dispatch:
+    inputs:
+      from_trigger:
+        description: "Set by the Apps Script (live stream ended); leave empty"
+        required: false
+        default: ""
 
 permissions:
   contents: read

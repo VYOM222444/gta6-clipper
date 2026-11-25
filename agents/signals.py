@@ -2,6 +2,8 @@
 
 For the top candidates (finished live streams and long videos, best score first):
   - chat replay spikes   (yt-dlp, live streams only)   "LMAO / 💀 / CLIP IT" per 10 s
+                         or, in api mode too, the LiveChat tab: reactions per 10 s counted WHILE
+                         the stream was live by the Apps Script (pollLive), no yt-dlp needed
   - Most Replayed peaks  (yt-dlp video info "heatmap")
   - timestamped comments (YouTube API, 1 unit)          "4:32 💀"
   - loudness peaks       (full mode only, when there is no chat replay: audio-only download,
@@ -105,6 +107,12 @@ def chat_spikes(messages, cfg):
         if t >= 0 and is_reaction(text):
             b = int(t // win)
             counts[b] = counts.get(b, 0) + 1
+    return spikes_from_counts(counts, cfg)
+
+
+def spikes_from_counts(counts, cfg):
+    """{bin index: reaction count} (bins of chat_window_seconds) -> spike windows."""
+    win = cfg["chat_window_seconds"]
     if not counts:
         return []
     n_bins = max(counts) + 1
@@ -121,6 +129,22 @@ def chat_spikes(messages, cfg):
             out.append({"start": start, "end": end, "signal": "chat",
                         "strength": c / baseline,
                         "note": f"chat {c / baseline:.1f}x normal ({c} reactions)"})
+    return out
+
+
+def live_chat_counts(rows, cfg):
+    """LiveChat tab rows (written live by the Apps Script) -> {video_id: {bin index: reactions}}."""
+    win = cfg["chat_window_seconds"]
+    out = {}
+    for r in rows:
+        vid = str(r.get("video_id") or "")
+        try:
+            b, n = int(float(r.get("bin_s"))) // win, int(float(r.get("reactions") or 0))
+        except (TypeError, ValueError):
+            continue
+        if vid and b >= 0:
+            out.setdefault(vid, {})
+            out[vid][b] = out[vid].get(b, 0) + n
     return out
 
 
@@ -313,7 +337,7 @@ def due_for_recheck(c, cfg, now):
     return since is None or since >= cfg.get("recheck_every_hours", 6) - 0.5
 
 
-def pick_videos(candidates, tracker_rows, rules, mode="full", now=None):
+def pick_videos(candidates, tracker_rows, rules, mode="full", now=None, live=frozenset()):
     sig, sc = rules["signals"], rules["scout"]
     now = now or datetime.now(timezone.utc)
     labels = {r["video_id"]: r.get("label", "") for r in tracker_rows}
@@ -325,7 +349,7 @@ def pick_videos(candidates, tracker_rows, rules, mode="full", now=None):
         if not vid or vid in seen:
             continue
         seen.add(vid)
-        if c.get("kind") not in sig["kinds"]:
+        if c.get("kind") not in sig["kinds"] and not (vid in live and c.get("kind") == "live_vod"):
             continue
         if _f(c.get("duration_s")) < sig["min_duration_s"] and c.get("kind") != "live_vod":
             continue
@@ -385,9 +409,9 @@ def is_blocked(err):
 
 # --- run --------------------------------------------------------------------------------------
 
-def analyse(video, info, chat, comments, cfg, loud=None):
+def analyse(video, info, chat, comments, cfg, loud=None, live_counts=None):
     duration = _f((info or {}).get("duration")) or _f(video.get("duration_s")) or 10 ** 6
-    windows = chat_spikes(chat, cfg)
+    windows = chat_spikes(chat, cfg) if chat else spikes_from_counts(live_counts or {}, cfg)
     windows += loudness_peaks(loud or [], cfg)
     windows += replay_peaks((info or {}).get("heatmap") or [], duration, cfg)
     windows += comment_peaks(comments, duration, cfg)
@@ -408,11 +432,17 @@ def main():
         candidates = sheets.read_records(cand_ws)
         known = sheets.read_records(mom_ws)
         tracker_rows = sheets.read_records(ss.worksheet("Tracker"))
+        try:  # live chat counted while the stream was live (tools/apps_script_trigger.gs pollLive)
+            live = live_chat_counts(sheets.read_records(ss.worksheet("LiveChat")), cfg)
+        except Exception:
+            live = {}
     except sheets.SheetSetupError as e:
         print(f"SIGNALS FAILED (sheet): {e}")
         return 1
 
-    todo = pick_videos(candidates, tracker_rows, rules, mode, now)
+    todo = pick_videos(candidates, tracker_rows, rules, mode, now, frozenset(live))
+    live_first = [c for c in todo if str(c["video_id"]) in live]
+    todo = live_first + [c for c in todo if str(c["video_id"]) not in live]
     try:
         yt = YouTube(budget_units=settings["youtube"]["signals_run_budget_units"])
     except YouTubeError:
@@ -432,7 +462,7 @@ def main():
                 if err and is_blocked(err):
                     blocked += 1
             loud, lerr = [], ""
-            if mode != "api" and not chat and cfg.get("loudness_enabled", True) and not (err and is_blocked(err)):
+            if mode != "api" and not chat and vid not in live and cfg.get("loudness_enabled", True) and not (err and is_blocked(err)):
                 path, lerr = fetch_audio(vid, tmp, cfg.get("loudness_timeout_seconds", 300))
                 if path:
                     try:
@@ -449,7 +479,7 @@ def main():
                     print(f"note: {e}")
                 except YouTubeError as e:
                     print(f"note: comments for {vid} failed: {e}")
-            merged = drop_known(vid, analyse(c, info, chat, comments, cfg, loud), known)
+            merged = drop_known(vid, analyse(c, info, chat, comments, cfg, loud, live.get(vid)), known)
             rows = to_moments(vid, merged, now)
             all_moments.extend(rows)
             upd = {"signals_at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
@@ -461,7 +491,7 @@ def main():
             status[vid] = upd
             heat = len((info or {}).get("heatmap") or [])
             again = " (re-check)" if c.get("status") in RECHECK_STATUS else ""
-            print(f"  {vid}{again} | {c.get('kind'):<8} | chat msgs {len(chat):>6} | loud s {len(loud):>5} | heatmap {heat:>3} | "
+            print(f"  {vid}{again} | {c.get('kind'):<8} | chat msgs {len(chat) or sum(live.get(vid, {}).values()):>6} | loud s {len(loud):>5} | heatmap {heat:>3} | "
                   f"comments {len(comments):>3} | windows {len(rows)} | {c.get('title', '')[:45]}"
                   + (f" | yt-dlp: {err[:80]}" if err else "") + (f" | audio: {lerr[:60]}" if lerr else ""))
 

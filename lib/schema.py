@@ -55,6 +55,8 @@ TABS = {
         "example_id", "category", "rank", "have_skill", "url", "title", "channel_title", "views",
         "breakout", "age_days", "style", "updated_at", "trick_rank", "trick_use",
     ],
+    # Live chat counted while a stream is live (Apps Script pollLive): reactions per 10 s bin.
+    "LiveChat": ["key", "video_id", "bin_s", "reactions", "messages", "updated_at"],
     # Researcher notes on top/average GTA Shorts.
     "Research": [
         "research_id", "video_id", "url", "label", "views", "age_days", "hook_type",
