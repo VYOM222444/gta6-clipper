@@ -110,3 +110,37 @@ def test_researcher_length_rows():
     rows += [{"label": "winner", "length_s": 90, "collected_at": "2026-11-01T00:00:00Z"}]  # too old
     r = researcher.length_rows(rows, load_settings(), now)[0]
     assert r["rule_id"] == "style.clip_max_seconds" and 26 <= int(r["value"]) <= 27
+
+
+def test_story_structure_from_winners():
+    from lib import style
+    def f(o, m, e, pp, setup, beats):
+        return {"opening_type": o, "middle_type": m, "ending_type": e, "payoff_pct": pp,
+                "setup_seconds": setup, "beats": beats, "dead_air_seconds": 1}
+    win = [f("action_already_happening", "multiple_beats", "cut_on_payoff", 0.6, 0, 3)] * 6 + \
+          [f("payoff_first", "single_build_up", "reaction_after_payoff", 0.8, 2, 1)] * 3
+    avg = [f("setup_context", "single_build_up", "reaction_after_payoff", 0.85, 5, 1)] * 10
+    shape, why = style.structure(win, avg, min_n=8)
+    assert shape["opening_type"] == "action_already_happening"
+    assert shape["middle_type"] == "multiple_beats" and shape["ending_type"] == "cut_on_payoff"
+    assert shape["payoff_pct"] == 0.6 and shape["beats"] == 3
+    line = style.describe_structure(shape)
+    assert line.startswith("START: action already happening") and "payoff at ~60%" in line
+    row = style.structure_row(shape, why, "src", "t")
+    assert style.structure_from_playbook([row]) == shape
+    assert style.structure(win[:3], avg)[0] is None
+
+
+def test_watcher_prompt_gets_story_shape():
+    from agents.watcher import build_prompt
+    from lib.config import load_rules
+    rules = load_rules()
+    p = build_prompt({"title": "t", "channel_title": "c"}, [], {**rules, "structure_line": "START: x; END: y"})
+    assert "story shape: START: x; END: y" in p
+    assert "story shape" not in build_prompt({"title": "t"}, [], rules)
+
+
+def test_features_payoff_pct():
+    from agents.researcher import features_of
+    f = features_of({"features": '{"payoff_second": 15, "opening_type": "payoff_first"}', "length_s": 30})
+    assert f["payoff_pct"] == 0.5
