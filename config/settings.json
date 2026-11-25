@@ -180,8 +180,8 @@
       "whoosh_volume": 0.5,
       "rest_volume": 0.3,
       "experiments": {
-        "shake": 0.5,
-        "freeze": 0.5
+        "shake": 1.0,
+        "freeze": 1.0
       },
       "_experiments_note": "Skills under test: each goes on this share of clips at random (stable per clip); template_version tags (shake/freeze) let the Analyst compare our own posts with vs without.",
       "shake_seconds": 0.4,
@@ -202,7 +202,7 @@
     "reframe": {
       "_note": "lib/reframe.py: full-screen crops follow the action; clips with a streamer facecam get a split-screen (facecam on top) on split_share of clips (experiment, tag 'split'). Needs OpenCV (preinstalled in Colab).",
       "enabled": true,
-      "split_share": 0.5,
+      "split_share": 1.0,
       "facecam": true,
       "face_samples": 8,
       "motion_fps": 4,
