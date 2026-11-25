@@ -121,6 +121,9 @@ def build_prompt(c, windows, rules):
     else:
         where = ("You are shown the whole video. Use `segment` 0 and give `start`/`end` in "
                  "seconds from the start of the video.")
+    shape = (f"Winning GTA 6 Shorts right now follow this story shape: {rules['structure_line']}.\n"
+             "Choose start/end so each clip follows that shape as far as the footage allows.\n"
+             if rules.get("structure_line") else "")
     return f"""You pick moments from GTA 6 videos to turn into vertical Shorts (YouTube Shorts / Instagram Reels).
 Video title: "{c.get('title', '')}" by {c.get('channel_title', '')}.
 
@@ -131,7 +134,7 @@ Return up to 5 of the best clip-worthy moments, best first. A good moment:
 - has its payoff (funny, shocking, impressive, hype) within the first {hook['payoff_by_second']} seconds of the clip
 - has the right length for its content type ({lengths}); start right before the action, end right after the payoff (no dead air)
 - shows clear emotion: laughter, shock, rage, hype or "wow"
-Set `has_promo` true if the moment contains a sponsor read, ad, merch or channel promo.
+{shape}Set `has_promo` true if the moment contains a sponsor read, ad, merch or channel promo.
 `quality` 1-10: how likely this is to go viral as a Short (be strict; 8+ only for genuinely great moments).
 `content_type`: chaos (gameplay mayhem), reaction (streamer reacting), news (announcements/updates), secret (hidden detail/easter egg), tip (how-to).
 `style_tags`: 1-4 short tags like "police chase", "funny fail", "streamer scream", "car crash".
@@ -319,6 +322,10 @@ def main():
         return 1
 
     rules, cap = clip_style.apply_length(rules, playbook)
+    shape_line = clip_style.describe_structure(clip_style.structure_from_playbook(playbook))
+    if shape_line:
+        rules = {**rules, "structure_line": shape_line}
+        print(f"Story shape (from winners): {shape_line}")
     if cap:
         print(f"Clip length: max {cap} s (winning Shorts' length, Playbook style.clip_max_seconds).")
     try:

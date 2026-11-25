@@ -37,7 +37,9 @@ def describe(f):
         bits.append("sfx " + "/".join(sfx))
     if f.get("cuts"):
         bits.append(f"{f['cuts']} cuts")
-    return ", ".join(bits)[:300]
+    if f.get("story"):
+        bits.append(f"story: {f['story']}")
+    return ", ".join(bits)[:400]
 
 
 def _share(feats, test):

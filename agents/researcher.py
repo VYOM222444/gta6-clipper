@@ -59,6 +59,12 @@ HOOK_TEXT_KINDS = ["question", "bold_claim", "reaction", "warning", "number_or_l
 SFX = ["riser", "impact", "whoosh", "record_scratch", "meme_sound", "ding", "none"]
 MUSIC = ["none", "phonk", "hype_edm", "hip_hop_rap", "epic_orchestral", "lofi_chill", "meme_song",
          "sad_emotional", "other"]
+OPENINGS = ["payoff_first", "action_already_happening", "setup_context", "text_question_or_claim",
+            "reaction_face", "calm_intro"]
+MIDDLES = ["single_build_up", "multiple_beats", "fail_then_win", "countdown_or_list", "dialogue_banter",
+           "nonstop_chaos", "explanation"]
+ENDINGS = ["cut_on_payoff", "reaction_after_payoff", "punchline_text", "loop_back", "cliffhanger",
+           "replay_of_payoff", "call_to_action", "fade_out"]
 FRESH_LABELS = ("rising", "fresh_average")
 HASHTAG = re.compile(r"#(\w+)", re.UNICODE)
 HANDLE = re.compile(r"(?<![\w.])@([A-Za-z0-9_.\-]{3,30})")
@@ -97,6 +103,13 @@ SCHEMA = {
         "content_type": {"type": "STRING", "enum": CONTENT_TYPES},
         "topic": {"type": "STRING"},
         "spoken_language": {"type": "STRING"},
+        "opening_type": {"type": "STRING", "enum": OPENINGS},
+        "setup_seconds": {"type": "NUMBER"},
+        "middle_type": {"type": "STRING", "enum": MIDDLES},
+        "beats": {"type": "INTEGER"},
+        "dead_air_seconds": {"type": "NUMBER"},
+        "ending_type": {"type": "STRING", "enum": ENDINGS},
+        "story": {"type": "STRING"},
     },
     "required": ["hook_type", "text_on_screen_first_second", "payoff_second", "caption_style",
                  "layout", "facecam", "zoom_ins", "cuts", "sound_effects", "background_music",
@@ -130,7 +143,21 @@ edited, exactly as you see and hear it. Do not judge whether it is good.
 - ends_right_after_payoff: the video ends within ~2 seconds after the payoff.
 - pace: overall editing pace. content_type: chaos (gameplay mayhem), reaction (person reacting),
   news, secret (hidden detail), tip (how-to), other.
-- topic: 3-6 words, what the Short is about. spoken_language: main spoken language or "none"."""
+- topic: 3-6 words, what the Short is about. spoken_language: main spoken language or "none".
+STORY STRUCTURE (how it starts, goes through the middle, and ends):
+- opening_type: the first 3 seconds. payoff_first = shows the best moment/result first, then how
+  it happened; action_already_happening; setup_context = explains/sets the scene first;
+  text_question_or_claim = big text poses a question or claim; reaction_face; calm_intro.
+- setup_seconds: seconds from the start until the main action/escalation begins (0 if instant).
+- middle_type: single_build_up (tension builds to one payoff), multiple_beats (several mini
+  payoffs), fail_then_win (tries, fails, succeeds), countdown_or_list, dialogue_banter,
+  nonstop_chaos, explanation.
+- beats: number of distinct funny/exciting moments in the whole Short.
+- dead_air_seconds: the longest stretch where nothing interesting happens.
+- ending_type: cut_on_payoff (ends on the payoff), reaction_after_payoff (a reaction follows),
+  punchline_text (text joke at the end), loop_back (flows back to the start), cliffhanger,
+  replay_of_payoff, call_to_action (follow/subscribe), fade_out.
+- story: one line "start -> middle -> end", e.g. "cops spot him -> 3 near misses -> bike flips onto roof"."""
 
 
 def _f(x, d=0.0):
@@ -448,14 +475,18 @@ BOOL_FEATURES = ["text_on_screen_first_second", "has_title_label", "caption_keyw
                  "slow_motion", "freeze_frame", "replay_of_moment", "screen_shake", "background_music",
                  "cuts_on_beat",
                  "voiceover", "emoji_or_stickers", "loop_ending", "ends_right_after_payoff"]
-NUM_FEATURES = ["payoff_second", "zoom_ins", "cuts", "length_s"]
+NUM_FEATURES = ["payoff_second", "zoom_ins", "cuts", "length_s", "payoff_pct", "setup_seconds", "beats",
+                "dead_air_seconds"]
 ENUM_FEATURES = ["hook_text_kind", "hook_type", "caption_style", "caption_position", "layout", "pace", "content_type",
-                 "music_type"]
+                 "music_type", "opening_type", "middle_type", "ending_type"]
 SECTION = {"hook_text_kind": "hook", "text_on_screen_first_second": "hook", "hook_type": "hook", "payoff_second": "hook",
            "has_title_label": "text", "caption_style": "captions", "caption_position": "captions",
            "caption_keyword_color": "captions", "layout": "framing", "facecam": "framing",
            "length_s": "length", "content_type": "content",
-           "background_music": "sound", "music_type": "sound", "cuts_on_beat": "sound"}
+           "background_music": "sound", "music_type": "sound", "cuts_on_beat": "sound",
+           "opening_type": "structure", "middle_type": "structure", "ending_type": "structure",
+           "payoff_pct": "structure", "setup_seconds": "structure", "beats": "structure",
+           "dead_air_seconds": "structure"}
 
 
 def features_of(row):
@@ -466,6 +497,8 @@ def features_of(row):
     if not f or "error" in f:
         return None
     f["length_s"] = _f(row.get("length_s"))
+    if f.get("payoff_second") is not None and f["length_s"] > 0:
+        f["payoff_pct"] = round(min(1.0, max(0.0, _f(f["payoff_second"]) / f["length_s"])), 2)
     return f
 
 
@@ -745,6 +778,14 @@ def style_rows(rows, settings, now):
     return clip_style.playbook_rows(st, why, ex, src, iso(now))
 
 
+def structure_rows(rows, settings, now):
+    """style.structure: the story shape winners use (start, middle, end, payoff timing)."""
+    win, avg = winner_groups(rows, settings, now)
+    shape, why = clip_style.structure(win, avg, settings["researcher"].get("min_group", 8))
+    src = f"researcher structure {now.date().isoformat()} (n={len(win)} winners / {len(avg)} average)"
+    return [clip_style.structure_row(shape, why, src, iso(now))]
+
+
 def length_groups(rows, settings, now):
     """Lengths (s) of 7-day winners + rising fresh Shorts, and of average ones (no Gemini tags needed)."""
     cfg, fcfg = settings["researcher"], settings["researcher"]["fresh"]
@@ -879,7 +920,8 @@ def main(argv=None):
             msgs.append(f"right now: {src}")
         for m in msgs:
             print(f"Findings {m}.")
-        sp = style_rows(records, settings, now) + length_rows(records, settings, now)
+        sp = (style_rows(records, settings, now) + length_rows(records, settings, now)
+              + structure_rows(records, settings, now))
         gp = gap_rows(records, settings, now)
         hot, basis = viral_tricks_now(records, settings, now)
         ecfg = settings["researcher"].get("examples", {})

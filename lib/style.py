@@ -191,3 +191,77 @@ def apply_length(rules, playbook_rows, min_gap=5):
         w["clip_min_seconds"] = min(w.get("clip_min_seconds", 8), max(8, w["clip_max_seconds"] - min_gap))
     out["watcher"] = w
     return out, cap
+
+
+# --- story structure (how winners start, go through the middle, and end) -----------------------
+
+STRUCT_ENUMS = ("opening_type", "middle_type", "ending_type")
+STRUCT_NUMS = ("payoff_pct", "setup_seconds", "beats", "dead_air_seconds")
+
+
+def structure(win, avg, min_n=8):
+    """Story shape of winning Shorts from their Gemini tags. -> (shape dict or None, reasons).
+    Each part = the value winners use most MORE than average Shorts (>= 20% of winners), else the
+    most common among winners; numbers = winners' medians."""
+    w = [f for f in win if f.get("opening_type")]
+    a = [f for f in avg if f.get("opening_type")]
+    if len(w) < min_n:
+        return None, f"not enough winners tagged with story structure yet ({len(w)} < {min_n})"
+    shape, why = {}, {}
+    for k in STRUCT_ENUMS:
+        vals = sorted({f.get(k) for f in w if f.get(k)})
+        if not vals:
+            continue
+        share = {v: (_share(w, lambda f: f.get(k) == v), _share(a, lambda f: f.get(k) == v)) for v in vals}
+        lifted = [v for v in vals if share[v][0] >= 0.2 and share[v][0] > share[v][1]]
+        best = max(lifted or vals, key=lambda v: (share[v][0] - share[v][1]) if lifted else share[v][0])
+        shape[k] = best
+        why[k] = f"{_pct(share[best][0])} of winners vs {_pct(share[best][1])} of average"
+    for k in STRUCT_NUMS:
+        wv = [float(f[k]) for f in w if isinstance(f.get(k), (int, float))]
+        av = [float(f[k]) for f in a if isinstance(f.get(k), (int, float))]
+        if wv:
+            shape[k] = round(statistics.median(wv), 2)
+            why[k] = f"winners {round(statistics.median(wv), 2)} vs average " + (
+                str(round(statistics.median(av), 2)) if av else "?")
+    shape["n"] = len(w)
+    return shape, why
+
+
+def describe_structure(shape):
+    """One readable line, also used in the Watcher's prompt."""
+    if not shape:
+        return ""
+    nice = lambda v: str(v).replace("_", " ")
+    bits = []
+    if shape.get("opening_type"):
+        bits.append(f"START: {nice(shape['opening_type'])}"
+                    + (f", action within {shape['setup_seconds']:g} s" if "setup_seconds" in shape else ""))
+    if shape.get("middle_type"):
+        bits.append(f"MIDDLE: {nice(shape['middle_type'])}"
+                    + (f", about {shape['beats']:g} beats" if "beats" in shape else "")
+                    + (f", no more than {shape['dead_air_seconds']:g} s of dead air" if "dead_air_seconds" in shape else ""))
+    if shape.get("ending_type"):
+        bits.append(f"END: {nice(shape['ending_type'])}"
+                    + (f", payoff at ~{round(shape['payoff_pct'] * 100)}% of the clip" if "payoff_pct" in shape else ""))
+    return "; ".join(bits)
+
+
+def structure_row(shape, why, source, updated_at):
+    if not shape:
+        text = f"structure: not known yet ({why})"
+    else:
+        parts = [f"{k} {shape[k]} ({why.get(k, '')})" for k in STRUCT_ENUMS + STRUCT_NUMS if k in shape]
+        text = f"structure: {describe_structure(shape)} | " + "; ".join(parts)
+    return {"rule_id": "style.structure", "section": "style", "rule": text[:900],
+            "value": json.dumps(shape), "source": source, "updated_at": updated_at}
+
+
+def structure_from_playbook(rows):
+    for r in rows or []:
+        if r.get("rule_id") == "style.structure":
+            try:
+                return json.loads(r.get("value") or "null")
+            except (TypeError, ValueError):
+                return None
+    return None

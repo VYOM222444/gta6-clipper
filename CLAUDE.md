@@ -793,3 +793,15 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   used the winners' 75th percentile = 52 s, above every content type's own limit, so it capped
   nothing; now the winners' MEDIAN (29 s today). Supply note: only 10 clips in the 25 Nov batch
   (target 25) because few ready moments; should rise now that Signals runs again.
+- 2026-11-26 (story structure of winners): owner wants to know how winning Shorts start, go through
+  the middle and end. Researcher's Gemini tags now include opening_type (payoff_first,
+  action_already_happening, setup_context, text_question_or_claim, reaction_face, calm_intro),
+  setup_seconds, middle_type (single_build_up, multiple_beats, fail_then_win, countdown_or_list,
+  dialogue_banter, nonstop_chaos, explanation), beats, dead_air_seconds, ending_type (cut_on_payoff,
+  reaction_after_payoff, punchline_text, loop_back, cliffhanger, replay_of_payoff, call_to_action,
+  fade_out) and a one-line `story` ("start -> middle -> end"); payoff_pct = payoff_second / length.
+  Findings compare them (section `structure`); `style.structure` Playbook row = the winning shape
+  (each part = value winners use most more than average, numbers = winners' medians; needs >= 8
+  tagged winners, so ~1 day of new analyses). The Watcher's prompt gets that shape ("START: ...;
+  MIDDLE: ...; END: ..., payoff at ~X%") so it cuts clips the same way; Examples `style` shows the
+  story line. Only Shorts analysed from now on get these tags. 216 tests.
