@@ -178,3 +178,19 @@ def test_drop_known_windows():
     merged = [{"start": 100, "end": 140}, {"start": 400, "end": 440}]
     known = [{"video_id": "v", "start_s": "95", "end_s": "150"}, {"video_id": "x", "start_s": "400", "end_s": "450"}]
     assert signals.drop_known("v", merged, known) == [{"start": 400, "end": 440}]
+
+
+def test_loudness_peaks_finds_bursts():
+    from agents.signals import loudness_peaks, merge_windows
+    from lib.config import load_rules
+    cfg = load_rules()["signals"]
+    db = [-40.0] * 300
+    for t in (120, 121, 122):
+        db[t] = -18.0
+    db[240] = -20.0
+    db[5] = 0.0  # inside the skipped intro (first 5%)
+    w = loudness_peaks(db, cfg)
+    assert [x["start"] for x in sorted(w, key=lambda x: x["start"])] == [100, 220]
+    assert all(x["signal"] == "loud" for x in w)
+    assert merge_windows(w, cfg)  # 'loud' has points
+    assert loudness_peaks([-40.0] * 30, cfg) == []

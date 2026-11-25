@@ -4,6 +4,8 @@ For the top candidates (finished live streams and long videos, best score first)
   - chat replay spikes   (yt-dlp, live streams only)   "LMAO / 💀 / CLIP IT" per 10 s
   - Most Replayed peaks  (yt-dlp video info "heatmap")
   - timestamped comments (YouTube API, 1 unit)          "4:32 💀"
+  - loudness peaks       (full mode only, when there is no chat replay: audio-only download,
+                          loudness per second, spikes far above the nearby level = screams/hype)
 Nearby windows from different signals are merged. Output -> `Moments` (source=signal,
 gate_status=pending); the candidate's status becomes signals_done / no_signals.
 
@@ -140,6 +142,74 @@ def replay_peaks(heatmap, duration, cfg):
     return out
 
 
+# --- loudness ----------------------------------------------------------------------------
+
+def loudness_db(path, rate=4000):
+    """Loudness per second (dB, relative) of an audio/video file. Needs ffmpeg + numpy (Colab)."""
+    import numpy as np
+    p = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-ac", "1", "-ar", str(rate),
+                        "-f", "s16le", "-"], capture_output=True, timeout=600)
+    a = np.frombuffer(p.stdout, dtype=np.int16).astype(np.float32)
+    n = len(a) // rate
+    if n == 0:
+        return []
+    a = a[: n * rate].reshape(n, rate)
+    rms = np.sqrt((a ** 2).mean(axis=1)) + 1e-3
+    return [float(x) for x in 20 * np.log10(rms)]
+
+
+def loudness_peaks(db, cfg):
+    """Seconds far louder than the minute around them -> windows. db: list of dB per second."""
+    n = len(db)
+    if n < 60:
+        return []
+    half, need = cfg.get("loudness_context_seconds", 30), cfg["loudness_spike_db"]
+    skip = int(n * cfg.get("replay_skip_start_share", 0.05))
+    hits = []
+    for i in range(skip, n):
+        around = sorted(db[max(0, i - half): i + half])
+        base = around[len(around) // 2]
+        if db[i] - base >= need:
+            hits.append((i, db[i] - base))
+    peaks = []  # group seconds closer than 5 s; keep the loudest of each group
+    for i, ex in hits:
+        if peaks and i - peaks[-1]["last"] <= 5:
+            g = peaks[-1]
+            g["last"] = i
+            if ex > g["ex"]:
+                g["t"], g["ex"] = i, ex
+        else:
+            peaks.append({"t": i, "ex": ex, "last": i})
+    peaks.sort(key=lambda g: g["ex"], reverse=True)
+    out = []
+    for g in peaks[: cfg.get("loudness_max_peaks", 10)]:
+        out.append({"start": max(g["t"] - cfg.get("loudness_lead_seconds", 20), 0),
+                    "end": g["t"] + cfg.get("loudness_tail_seconds", 10), "signal": "loud",
+                    "strength": round(g["ex"], 1), "note": f"loud +{g['ex']:.0f} dB"})
+    return out
+
+
+def fetch_audio(video_id, workdir, timeout_s):
+    """Audio-only download (smallest stream). Returns (path or None, error text)."""
+    cmd = [sys.executable, "-m", "yt_dlp", "-f", "worstaudio[abr>=32]/worstaudio/bestaudio",
+           "--no-warnings", "--no-progress", "-o", os.path.join(workdir, f"{video_id}.audio.%(ext)s")]
+    if os.environ.get("YTDLP_JS_RUNTIME"):
+        cmd += ["--js-runtimes", os.environ["YTDLP_JS_RUNTIME"]]
+    if os.environ.get("YTDLP_COOKIES") and os.path.exists(os.environ["YTDLP_COOKIES"]):
+        cmd += ["--cookies", os.environ["YTDLP_COOKIES"]]
+    cmd.append(f"https://www.youtube.com/watch?v={video_id}")
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        return None, f"audio download stopped after {timeout_s}s"
+    files = [f for f in glob.glob(os.path.join(workdir, f"{glob.escape(video_id)}.audio.*"))
+             if not f.endswith(".part")]
+    if not files:
+        err = (p.stderr or p.stdout).strip().splitlines()[-1:] or ["audio download failed"]
+        return None, err[0]
+    return files[0], ""
+
+
 # --- timestamped comments ---------------------------------------------------------------
 
 def comment_timestamps(text, duration):
@@ -172,7 +242,8 @@ def comment_peaks(comments, duration, cfg):
 
 def _points(w):
     s = w["strength"]
-    return {"chat": min(s / 3, 3.0), "replay": s * 2, "comments": min(s / 2, 3.0)}[w["signal"]]
+    return {"chat": min(s / 3, 3.0), "replay": s * 2, "comments": min(s / 2, 3.0),
+            "loud": min(s / 5, 2.0)}[w["signal"]]
 
 
 def merge_windows(windows, cfg):
@@ -314,9 +385,10 @@ def is_blocked(err):
 
 # --- run --------------------------------------------------------------------------------------
 
-def analyse(video, info, chat, comments, cfg):
+def analyse(video, info, chat, comments, cfg, loud=None):
     duration = _f((info or {}).get("duration")) or _f(video.get("duration_s")) or 10 ** 6
     windows = chat_spikes(chat, cfg)
+    windows += loudness_peaks(loud or [], cfg)
     windows += replay_peaks((info or {}).get("heatmap") or [], duration, cfg)
     windows += comment_peaks(comments, duration, cfg)
     return merge_windows(windows, cfg)
@@ -359,6 +431,16 @@ def main():
                 info, chat, err = fetch_ytdlp(vid, live, tmp, cfg["chat_timeout_seconds"])
                 if err and is_blocked(err):
                     blocked += 1
+            loud, lerr = [], ""
+            if mode != "api" and not chat and cfg.get("loudness_enabled", True) and not (err and is_blocked(err)):
+                path, lerr = fetch_audio(vid, tmp, cfg.get("loudness_timeout_seconds", 300))
+                if path:
+                    try:
+                        loud = loudness_db(path)
+                    except Exception as e:  # ffmpeg/numpy missing or broken file: skip loudness
+                        lerr = f"loudness failed: {e}"
+                    finally:
+                        os.remove(path)
             comments = []
             if yt:
                 try:
@@ -367,7 +449,7 @@ def main():
                     print(f"note: {e}")
                 except YouTubeError as e:
                     print(f"note: comments for {vid} failed: {e}")
-            merged = drop_known(vid, analyse(c, info, chat, comments, cfg), known)
+            merged = drop_known(vid, analyse(c, info, chat, comments, cfg, loud), known)
             rows = to_moments(vid, merged, now)
             all_moments.extend(rows)
             upd = {"signals_at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
@@ -379,9 +461,9 @@ def main():
             status[vid] = upd
             heat = len((info or {}).get("heatmap") or [])
             again = " (re-check)" if c.get("status") in RECHECK_STATUS else ""
-            print(f"  {vid}{again} | {c.get('kind'):<8} | chat msgs {len(chat):>6} | heatmap {heat:>3} | "
+            print(f"  {vid}{again} | {c.get('kind'):<8} | chat msgs {len(chat):>6} | loud s {len(loud):>5} | heatmap {heat:>3} | "
                   f"comments {len(comments):>3} | windows {len(rows)} | {c.get('title', '')[:45]}"
-                  + (f" | yt-dlp: {err[:80]}" if err else ""))
+                  + (f" | yt-dlp: {err[:80]}" if err else "") + (f" | audio: {lerr[:60]}" if lerr else ""))
 
     upd, new = sheets.upsert_rows(mom_ws, TABS[TAB], "moment_id", all_moments,
                                   preserve=("gate_status", "created_at"))

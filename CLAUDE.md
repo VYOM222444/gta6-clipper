@@ -711,3 +711,10 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   (YouTube links it): description "🎥 Clip from @handle (Channel Name)", ig_caption
   "🎥 Channel Name (@handle on YouTube)" (no bare @ on Instagram: it would tag a random IG account);
   renderer overlay "via @handle". Falls back to the channel name.
+- 2026-11-24 (loudness signals): Signals full mode (Colab `colab/signals.ipynb`) now also finds
+  LOUD moments when a video has no chat replay (normal long videos, or streams without chat):
+  smallest audio-only stream via yt-dlp -> ffmpeg 4 kHz mono -> dB per second (numpy) -> seconds
+  >= `loudness_spike_db` (8) above the median of the minute around them (first 5% skipped),
+  grouped within 5 s, top 10 -> windows 20 s before to 10 s after, signal `loud`. Merged with
+  comments/Most Replayed like the others (2 signals agreeing x1.5). Audio file deleted after.
+  Tested on synthetic audio with two bursts. rules.signals.loudness_*.
