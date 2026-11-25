@@ -805,3 +805,17 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   tagged winners, so ~1 day of new analyses). The Watcher's prompt gets that shape ("START: ...;
   MIDDLE: ...; END: ..., payoff at ~X%") so it cuts clips the same way; Examples `style` shows the
   story line. Only Shorts analysed from now on get these tags. 216 tests.
+- 2026-11-26 (deep research, as much data as possible): owner wants the analysis run many times a
+  day. Researcher mode `deep` (no YouTube, no search quota): analyses up to `researcher.deep.per_run`
+  (60) collected Shorts per run, `pick_deep` order: winners/rising never analysed -> winners missing
+  the newest tags (story structure backfill) | alternating with average never analysed -> average
+  missing tags -> above/low never analysed -> above/low missing tags; then findings. On 26 Nov the
+  Research tab had 1,964 Shorts, only 438 analysed. Researcher Gemini budget 100 -> 350 Flash-Lite
+  calls/day (parallel 4, 12/min; the ~500/day free limit is shared with the Watcher's 30 fallback
+  calls + Decider). Workflow job `research-deep` every 3 h ("53 */3 * * *") ONLY when the repo
+  variable DEEP_RESEARCH = on, or manual mode=deep. Actions minutes: last 7 days used ~540 min
+  (~2,300 per 30 days, already above the 2,000 private-repo allowance); deep runs add ~20 min each,
+  so they are meant for a PUBLIC repo (standard runners free and unlimited). Tests no longer run on
+  the bots' data commits (paths-ignore data/, batches/, posts/: ~9 min/day saved); the Researcher
+  guard job no longer runs for fresh/deep runs. New end-to-end test of `researcher.main(["deep"])`.
+  218 tests.
