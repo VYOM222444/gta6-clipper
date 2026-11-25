@@ -685,3 +685,11 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   `trick<k>#<n>`, plus `top#<n>` (10 breakouts of any style). New columns trick_rank, trick_use.
   Researcher log prints "Viral tricks right now". Colab cell 6 `EXAMPLES = 30` = top 3 tricks x 10,
   files `NN_trick<k>-<name>_<id>.mp4`. Settings `researcher.examples`. 194 tests.
+- 2026-11-24 (experiment report): owner: judge experiments within a day, not a week. `lib/experiments.py`
+  + `log_posts.experiment_report` (runs in the Tracker workflow's stats step, every ~6 h): for each
+  skill under test (`render.edits.experiments` keys + split/follow when reframe is on) compares our
+  YouTube posts WITH vs WITHOUT it (tags from Batch.template_version) at the earliest checkpoint
+  where both sides have >= 3 posts: views_24h, else 12h, else 6h; medians (an outlier can't
+  decide); BETTER/WORSE at >= 1.3x either way, "LOOKS ..." + "(early, few posts)" until >= 10 per
+  side. -> Playbook `experiments.<skill>` rows + log. Needs posted links logged (posts/*.json);
+  Instagram has no stats yet. 197 tests.
