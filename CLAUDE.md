@@ -32,8 +32,9 @@ Principle: lean build-measure-learn. Ship the smallest working version first, th
   Tracker, Signals) and send Gemini only the top candidates, ideally only short windows
   around a signal, not whole videos. Ask for 3–5 moments per call. Count every call and stop
   cleanly before the cap. Read limits from config, never assume.
-- **GitHub Actions minutes:** private repo = 2,000 free min/month. Scout + Tracker ~250,
-  Signals (comments only) ~60, Watcher (2/day, 4 parallel Gemini calls) ~500. Keep new schedules small.
+- **GitHub Actions minutes:** the repo is PUBLIC since 2026-11-26, so standard GitHub-hosted
+  runners are free and unlimited (no 2,000-minute cap). Still never commit secrets, cookies,
+  tokens or notebook outputs: everything in the repo and its history is visible to anyone.
 - **YouTube downloads may be blocked on GitHub's servers.** Downloading (yt-dlp, including
   chat replays and audio) and video rendering run in Colab if GitHub is blocked.
 
@@ -819,3 +820,7 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   the bots' data commits (paths-ignore data/, batches/, posts/: ~9 min/day saved); the Researcher
   guard job no longer runs for fresh/deep runs. New end-to-end test of `researcher.main(["deep"])`.
   218 tests.
+- 2026-11-26 (repo public): owner deleted the old leaked token (it was in git history from the
+  16 Nov notebook incident), made the repo public (unlimited Actions minutes) and set the repo
+  variable DEEP_RESEARCH = on, so `research-deep` runs every 3 h. First deep run started by hand.
+  Rule from now on: nothing secret in the repo or its history (it is public).
