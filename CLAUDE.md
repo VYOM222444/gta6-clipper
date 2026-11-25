@@ -787,3 +787,9 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   overwrote the LiveChat dict, then `live.get(vid)` -> AttributeError. Renamed to `is_vod`. New
   end-to-end test runs `signals.main()` in api mode on fake sheets (LiveChat tab included) and
   checks a chat moment is written; it fails on the old code. Lesson: test main(), not only helpers.
+- 2026-11-26 (health check): all workflows green after #46; Signals verified (live-chat windows from
+  the LiveChat tab: 601 messages -> 3 windows). Live mode works (LiveChat: 2 streams, 763 bins).
+  Auto-log found 11 of our YouTube Shorts (best: 1,180 and 917 views). Fix: `style.clip_max_seconds`
+  used the winners' 75th percentile = 52 s, above every content type's own limit, so it capped
+  nothing; now the winners' MEDIAN (29 s today). Supply note: only 10 clips in the 25 Nov batch
+  (target 25) because few ready moments; should rise now that Signals runs again.

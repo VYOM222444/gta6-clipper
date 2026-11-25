@@ -148,13 +148,13 @@ def tag(style):
 
 def clip_length(win_lengths, avg_lengths, min_n=8, lo=15, hi=60):
     """Longest clip we should make, from how long winning Shorts are.
-    Returns (max_seconds or None, reason). max = 75th percentile of winners' lengths, so most
-    winners fit inside it; clamped to [lo, hi]."""
+    Returns (max_seconds or None, reason). max = MEDIAN length of winners (the 75th percentile was
+    52 s on real data, above every content type's own limit, so it changed nothing); clamped."""
     w = sorted(float(x) for x in win_lengths if x)
     if len(w) < min_n:
         return None, f"not enough winners with a length ({len(w)} < {min_n})"
     q = statistics.quantiles(w, n=4)  # q[1] = median, q[2] = 75th percentile
-    cap = int(round(min(hi, max(lo, q[2]))))
+    cap = int(round(min(hi, max(lo, q[1]))))
     a = [float(x) for x in avg_lengths if x]
     avg = f", average Shorts median {round(statistics.median(a))} s" if a else ""
     return cap, f"winners median {round(q[1])} s, 75% are <= {round(q[2])} s{avg} (n={len(w)})"
