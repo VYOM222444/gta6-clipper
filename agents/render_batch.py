@@ -18,7 +18,7 @@ import os
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from lib import reframe
@@ -39,14 +39,29 @@ def _f(x, d=0.0):
         return d
 
 
-def to_render(rows, limit):
+def _batch_day(row):
+    try:
+        return date.fromisoformat(str(row.get("batch_id"))[:10])
+    except ValueError:
+        return date.min
+
+
+def to_render(rows, limit, max_age_days=None, today=None):
+    """Approved, not-yet-rendered rows, NEWEST batch first (trends fade fast). Rows from batches
+    older than max_age_days are skipped (stale moments are not worth a render or a post)."""
+    today = today or datetime.now(timezone.utc).date()
     out = []
     for r in rows:
         if str(r.get("approved", "")).strip().lower() not in YES:
             continue
         if r.get("render_status") == "done" or not r.get("batch_id"):
             continue
+        if max_age_days is not None:
+            day = _batch_day(r)
+            if day != date.min and (today - day).days > max_age_days:
+                continue
         out.append(r)
+    out.sort(key=_batch_day, reverse=True)  # newest day first; row order kept within a day (stable sort)
     return out[:limit]
 
 
@@ -362,8 +377,9 @@ def main():
         print(f"RENDER FAILED (sheet): {e}")
         return 1
     limit = int(os.environ.get("CLIPPER_MAX_CLIPS") or 0) or cfg["max_clips_per_run"]
-    todo = to_render(rows, limit)
-    print(f"{len(todo)} approved clips to render.")
+    max_age = cfg.get("max_batch_age_days", 1)
+    todo = to_render(rows, limit, max_age)
+    print(f"{len(todo)} approved clips to render (newest first; batches older than {max_age} day(s) skipped).")
     if not todo:
         print("Nothing to do. Type 'yes' in the approved column of the Batch tab first.")
         return 0

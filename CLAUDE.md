@@ -771,3 +771,7 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   secret META_TOKENS_JSON (Page tokens, no expiry; never printed, masked in errors). Does nothing
   until the secret exists. A failed post retries next run; a published post whose link lookup
   fails is still marked done (no double posts). Setup steps in section 10. 203 tests.
+- 2026-11-25 (render newest first): ~88 approved clips from 20-25 Nov were never rendered, and the
+  renderer took rows oldest first, so a render would spend its time on stale moments. `to_render` now
+  sorts newest batch day first and skips batches older than `render.max_batch_age_days` (1 = today +
+  yesterday); older unrendered rows simply stay unrendered. 212 tests.
