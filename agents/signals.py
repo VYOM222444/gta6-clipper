@@ -455,10 +455,10 @@ def main():
     all_moments, status, blocked = [], {}, 0
     with tempfile.TemporaryDirectory() as tmp:
         for c in todo:
-            vid, live = str(c["video_id"]), c.get("kind") == "live_vod"
+            vid, is_vod = str(c["video_id"]), c.get("kind") == "live_vod"
             info, chat, err = (None, [], "")
             if mode != "api":
-                info, chat, err = fetch_ytdlp(vid, live, tmp, cfg["chat_timeout_seconds"])
+                info, chat, err = fetch_ytdlp(vid, is_vod, tmp, cfg["chat_timeout_seconds"])
                 if err and is_blocked(err):
                     blocked += 1
             loud, lerr = [], ""

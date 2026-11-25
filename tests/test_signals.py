@@ -217,3 +217,43 @@ def test_live_chat_counts_make_spikes():
     cand = [{"video_id": "V1", "kind": "live_vod", "duration_s": 7200, "title": "GTA 6 live stream", "score": 1,
              "status": "new"}]
     assert pick_videos(cand, [], rules, "api", live=frozenset({"V1"}))
+
+
+def test_main_api_mode_runs_end_to_end(monkeypatch):
+    """Regression: a loop variable named `live` once shadowed the LiveChat dict and crashed main()."""
+    from datetime import datetime, timedelta, timezone
+    from agents import signals
+    from lib import sheets
+    from lib.schema import TABS
+    from tests.fakes import FakeSpreadsheet, FakeWorksheet
+
+    def tab(name, rows):
+        head = TABS[name]
+        return FakeWorksheet(name, [head] + [[str(r.get(h, "")) for h in head] for r in rows])
+
+    pub = (datetime.now(timezone.utc) - timedelta(hours=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cand = [{"video_id": "VODVIDEO001", "title": "GTA 6 live stream chaos", "kind": "live_vod",
+             "duration_s": "7200", "status": "new", "score": "10", "published_at": pub, "views": "50000"},
+            {"video_id": "LONGVIDEO02", "title": "GTA 6 gameplay part 1", "kind": "long",
+             "duration_s": "1800", "status": "new", "score": "9", "published_at": pub, "views": "40000"}]
+    live = [{"key": f"VODVIDEO001-{b * 10}", "video_id": "VODVIDEO001", "bin_s": b * 10,
+             "reactions": 40 if b == 300 else 2, "messages": 50} for b in range(600)]
+    ss = FakeSpreadsheet([tab("Candidates", cand), tab("Tracker", []), tab("Moments", []),
+                          tab("LiveChat", live)])
+
+    class YT:
+        used, budget = 0, 100
+
+        def __init__(self, budget_units=None):
+            pass
+
+        def top_comments(self, vid, n):
+            return []
+
+    monkeypatch.setenv("SIGNALS_MODE", "api")
+    monkeypatch.setattr(sheets, "get_client", lambda: None)
+    monkeypatch.setattr(sheets, "open_sheet", lambda c, i: ss)
+    monkeypatch.setattr(signals, "YouTube", YT)
+    assert signals.main() == 0
+    moments = sheets.read_records(ss.worksheet("Moments"))
+    assert any(m["video_id"] == "VODVIDEO001" and "chat" in m["signal"] for m in moments)

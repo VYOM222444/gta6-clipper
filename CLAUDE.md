@@ -782,3 +782,8 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   compares clips with a skill vs older clips without it (before/after), so read it with that in mind.
   The "auto shares" idea (verdicts setting 10-90%) was dropped before merge. Owner will start posting
   again once the current viral editing skills are built; old unrendered batches are skipped (#44).
+- 2026-11-26 (Signals crash fix): the live-mode PR made Signals fail on GitHub from its first run
+  (2026-11-25 19:06 and 21:32 UTC): inside main's loop `vid, live = ..., kind == "live_vod"`
+  overwrote the LiveChat dict, then `live.get(vid)` -> AttributeError. Renamed to `is_vod`. New
+  end-to-end test runs `signals.main()` in api mode on fake sheets (LiveChat tab included) and
+  checks a chat moment is written; it fails on the old code. Lesson: test main(), not only helpers.
