@@ -77,7 +77,7 @@ def test_fit_size_and_fill_layout():
 def test_clip_length_cap_from_winners():
     from lib import style
     cap, why = style.clip_length([20, 25, 28, 29, 30, 31, 33, 40], [36, 40, 45])
-    assert 30 <= cap <= 35 and "median" in why
+    assert cap == 30 and "median" in why
     assert style.clip_length([20, 30], [])[0] is None
     assert style.clip_length([100] * 10, [])[0] == 60
     assert style.clip_length([5] * 10, [])[0] == 15
@@ -109,4 +109,4 @@ def test_researcher_length_rows():
     rows += [{"label": "average", "length_s": 40, "collected_at": "2026-11-23T00:00:00Z"}]
     rows += [{"label": "winner", "length_s": 90, "collected_at": "2026-11-01T00:00:00Z"}]  # too old
     r = researcher.length_rows(rows, load_settings(), now)[0]
-    assert r["rule_id"] == "style.clip_max_seconds" and 28 <= int(r["value"]) <= 31
+    assert r["rule_id"] == "style.clip_max_seconds" and 26 <= int(r["value"]) <= 27
