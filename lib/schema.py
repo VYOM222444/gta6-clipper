@@ -37,6 +37,7 @@ TABS = {
         "content_type", "hook_text", "title_label", "title", "description",
         "hashtags", "creator_credit", "approved", "fetch_status", "render_status",
         "output_path", "rendered_at", "template_version", "ig_caption",
+        "ig_status", "ig_url", "fb_status", "fb_url", "social_at",
     ],
     # Owner logs every post here; Analyst fills in results.
     "Posted": [
