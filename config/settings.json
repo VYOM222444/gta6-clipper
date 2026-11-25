@@ -210,7 +210,8 @@
       "min_motion": 2.0,
       "max_speed": 0.3,
       "smooth_window": 5
-    }
+    },
+    "max_batch_age_days": 1
   },
   "researcher": {
     "_note": "Daily study of GTA 6 Shorts 3-14 days old (settled) + twice-daily fresh tier 0-72 h (what works right now): winners vs average -> Playbook tab (research.*, research.now.*).",
