@@ -12,6 +12,10 @@ on:
   schedule:
     - cron: "23 1 * * *"
     - cron: "23 11 * * *"
+    # Deep analysis every 3 h (no YouTube searches, only Gemini Flash-Lite on Shorts already
+    # collected). Runs only when the repo variable DEEP_RESEARCH = on (it costs Actions minutes;
+    # free and unlimited once the repo is public).
+    - cron: "53 */3 * * *"
   workflow_dispatch:
     inputs:
       from_trigger:
@@ -19,7 +23,7 @@ on:
         required: false
         default: ""
       mode:
-        description: "all (settled + fresh), fresh (0-72 h Shorts only) or findings (only recompute Playbook: style, gaps; no YouTube/Gemini)"
+        description: "all (settled + fresh), fresh (0-72 h Shorts only), deep (analyse as many collected Shorts as the Gemini budget allows, no YouTube) or findings (only recompute Playbook)"
         required: false
         default: "all"
 
@@ -34,7 +38,8 @@ concurrency:
 jobs:
   guard:
     # Skip a scheduled / external-trigger run if research really ran < 20 h ago (overlapping
-    # triggers). Manual button and chain starts always run.
+    # triggers). Manual button and chain starts always run. Not needed for fresh / deep runs.
+    if: github.event.schedule != '23 11 * * *' && github.event.schedule != '53 */3 * * *' && inputs.mode != 'fresh' && inputs.mode != 'deep'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -62,7 +67,7 @@ jobs:
 
   research:
     needs: guard
-    if: needs.guard.outputs.skip != 'true' && github.event.schedule != '23 11 * * *' && inputs.mode != 'fresh'
+    if: needs.guard.outputs.skip != 'true' && github.event.schedule != '23 11 * * *' && github.event.schedule != '53 */3 * * *' && inputs.mode != 'fresh' && inputs.mode != 'deep'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -121,6 +126,41 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/gemini_usage_researcher.json data/channel_baselines.json 2>/dev/null || exit 0
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "researcher: gemini usage $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push && exit 0
+            sleep 5
+          done
+          exit 1
+
+  research-deep:
+    # Every 3 h when DEEP_RESEARCH = on (or manual mode=deep): analyse up to researcher.deep.per_run
+    # collected Shorts (never-analysed first, then old ones missing the newest tags), then findings.
+    if: (github.event.schedule == '53 */3 * * *' && vars.DEEP_RESEARCH == 'on') || inputs.mode == 'deep'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Deep analysis of collected Shorts
+        env:
+          PYTHONUNBUFFERED: "1"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python -m agents.researcher deep
+      - name: Save Gemini call counter
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/gemini_usage_researcher.json 2>/dev/null || exit 0
           if git diff --cached --quiet; then
             exit 0
           fi

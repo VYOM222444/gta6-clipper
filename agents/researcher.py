@@ -421,6 +421,51 @@ def pick_fresh(rows, per_label, now, max_age_h=72):
     return out
 
 
+WIN_SIDE = ("winner", "rising")
+AVG_SIDE = ("average", "fresh_average")
+LOW_SIDE = ("above", "fresh_above", "low", "fresh_low")
+
+
+def _labels(r):
+    return {str(r.get("label") or ""), str(r.get("fresh_label") or "")}
+
+
+def _needs_tags(r):
+    """(untagged, missing the newest tags) for one Research row."""
+    raw = str(r.get("features", "")).strip()
+    if not raw:
+        return True, True
+    try:
+        f = json.loads(raw)
+    except ValueError:
+        return True, True
+    if not f or "error" in f:
+        return True, True
+    return False, "opening_type" not in f
+
+
+def pick_deep(rows, n):
+    """Deep mode: work through EVERYTHING collected, most useful first. Winner side and
+    comparison side alternate so both groups grow together:
+      winners/rising never analysed -> winners/rising analysed before the story tags existed
+      vs average never analysed -> average missing story tags -> above/low never analysed
+      (more contrast) -> above/low missing story tags. Youngest first inside each queue."""
+    def queue(labels, untagged):
+        q = [r for r in rows if _labels(r) & set(labels) and _needs_tags(r)[0 if untagged else 1]
+             and (untagged or not _needs_tags(r)[0])]
+        q.sort(key=lambda r: _f(r.get("age_days"), 99))
+        return q
+    win = queue(WIN_SIDE, True) + queue(WIN_SIDE, False)
+    other = queue(AVG_SIDE, True) + queue(AVG_SIDE, False) + queue(LOW_SIDE, True) + queue(LOW_SIDE, False)
+    out, seen = [], set()
+    for i in range(max(len(win), len(other))):
+        for q in (win, other):
+            if i < len(q) and q[i]["research_id"] not in seen:
+                seen.add(q[i]["research_id"])
+                out.append(q[i])
+    return out[:n]
+
+
 def flatten(features):
     """A few headline features also go into their own columns for easy reading."""
     return {"hook_type": features.get("hook_type", ""),
@@ -828,8 +873,9 @@ def gap_rows(rows, settings, now):
 
 def main(argv=None):
     what = (argv or sys.argv[1:] or ["all"])[0]
-    settled = what in ("collect", "analyze", "findings", "all")
-    fresh = what in ("fresh", "all")
+    deep = what == "deep"  # no YouTube: analyse as many collected Shorts as the budget allows
+    settled = what in ("collect", "analyze", "findings", "all", "deep")
+    fresh = what in ("fresh", "all", "deep")
     step = {"collect": "collect", "analyze": "analyze", "findings": "findings"}.get(what)
     settings, rules = load_settings(), load_rules()
     cfg = settings["researcher"]
@@ -844,7 +890,7 @@ def main(argv=None):
         print(f"RESEARCHER FAILED (sheet): {e}")
         return 1
 
-    if settled and step in (None, "collect"):
+    if settled and step in (None, "collect") and not deep:
         try:
             yt = YouTube(budget_units=cfg["run_budget_units"])
             rows, notes, n = collect(yt, settings, rules, now)
@@ -860,7 +906,7 @@ def main(argv=None):
         print(f"Collected {n} Shorts, {len(rows)} GTA 6 Shorts 3-{cfg['max_age_days']} days old: {by}. "
               f"Research: {new} new, {upd} updated. Quota used: {yt.used}/{yt.budget} units.")
 
-    if fresh:
+    if fresh and not deep:
         scout_ids = []
         try:
             scout_ids = scout_short_ids(sheets.read_records(ss.worksheet("Candidates")), now,
@@ -894,13 +940,16 @@ def main(argv=None):
             return 1
         records = sheets.read_records(ws)
         todo = []
-        if fresh:
+        if deep:
+            todo = pick_deep(records, cfg.get("deep", {}).get("per_run", 60))
+        elif fresh:
             todo += pick_fresh(records, fcfg["analyze_per_label"], now, fcfg.get("max_age_hours", 72))
-        if settled:
+        if settled and not deep:
             seen = {r["research_id"] for r in todo}
             todo += [r for r in pick_to_analyze(records, cfg["analyze_per_label"]) if r["research_id"] not in seen]
         print(f"Analysing {len(todo)} Shorts blind with Gemini (calls left today: {gem.remaining()}).")
-        updates, notes = analyze(gem, todo, now, gcfg.get("parallel_calls", 4), gcfg.get("max_run_minutes", 15))
+        minutes = cfg.get("deep", {}).get("max_minutes", 20) if deep else gcfg.get("max_run_minutes", 15)
+        updates, notes = analyze(gem, todo, now, gcfg.get("parallel_calls", 4), minutes)
         for note in notes:
             print(f"  {note}")
         sheets.set_values(ws, TABS[TAB], "research_id", updates)

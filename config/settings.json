@@ -84,11 +84,11 @@
       "models": [
         "gemini-flash-lite-latest"
       ],
-      "daily_budget": 100,
-      "parallel_calls": 3,
+      "daily_budget": 350,
+      "parallel_calls": 4,
       "max_run_minutes": 15,
-      "_note": "Flash-Lite has a much higher free limit than Flash (~500/day reported). Own counter: data/gemini_usage_researcher.json",
-      "requests_per_minute": 10
+      "_note": "Flash-Lite has a much higher free limit than Flash (~500/day reported, shared with the Watcher's 30 fallback calls and the Decider). Own counter: data/gemini_usage_researcher.json",
+      "requests_per_minute": 12
     },
     "decider": {
       "models": [
@@ -313,6 +313,11 @@
       "per_trick": 10,
       "top": 10,
       "min_use": 0.15
+    },
+    "deep": {
+      "_note": "mode deep: no YouTube; analyse collected Shorts (winners first, then comparison groups, then backfill of new tags). Scheduled every 3 h when repo variable DEEP_RESEARCH = on.",
+      "per_run": 60,
+      "max_minutes": 20
     }
   },
   "decider": {

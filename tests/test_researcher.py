@@ -284,3 +284,82 @@ def test_baseline_refresh_excludes_the_short_itself():
     assert n == 1 and "young" not in bl.data["UC1"]["views"]      # too new to have settled
     assert bl.median("UC1") == 2500 and bl.median("UC1", exclude_id="v3") == 2000
     assert not bl.stale("UC1", NOW, 3)
+
+
+def test_pick_deep_order_and_backfill():
+    import json as _j
+    from agents.researcher import pick_deep
+    old = _j.dumps({"hook_type": "action_first"})              # analysed before story tags existed
+    new = _j.dumps({"hook_type": "action_first", "opening_type": "payoff_first"})
+    rows = [{"research_id": "w_new", "label": "winner", "features": "", "age_days": 5},
+            {"research_id": "w_old", "label": "winner", "features": old, "age_days": 4},
+            {"research_id": "w_done", "label": "winner", "features": new, "age_days": 3},
+            {"research_id": "r_new", "fresh_label": "rising", "features": "", "age_days": 1},
+            {"research_id": "a_new", "label": "average", "features": "", "age_days": 6},
+            {"research_id": "a_old", "label": "average", "features": old, "age_days": 6},
+            {"research_id": "l_new", "label": "low", "features": "", "age_days": 6},
+            {"research_id": "bad", "label": "winner", "features": '{"error": "x"}', "age_days": 9}]
+    ids = [r["research_id"] for r in pick_deep(rows, 20)]
+    assert "w_done" not in ids
+    assert ids[:2] == ["r_new", "a_new"]               # youngest winner-side first, then comparison side
+    assert ids.index("w_old") > ids.index("bad") > ids.index("w_new")
+    assert ids.index("a_old") < ids.index("l_new")
+    assert len(pick_deep(rows, 3)) == 3
+
+
+def test_main_deep_mode_end_to_end(monkeypatch, tmp_path):
+    """mode deep: no YouTube, Gemini tags collected Shorts (incl. story structure), findings run."""
+    import json as _j
+    from datetime import datetime, timedelta, timezone
+    from agents import researcher
+    from lib import sheets
+    from lib.schema import TABS
+    from tests.fakes import FakeSpreadsheet, FakeWorksheet
+
+    now = datetime.now(timezone.utc)
+    ts = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def tab(name, rows):
+        head = TABS[name]
+        return FakeWorksheet(name, [head] + [[str(r.get(h, "")) for h in head] for r in rows])
+
+    research = [{"research_id": f"vid{i:08d}", "video_id": f"vid{i:08d}", "label": lab, "views": 100000,
+                 "length_s": 30, "collected_at": ts, "title": "GTA 6 funny", "age_days": 4}
+                for i, lab in enumerate(["winner"] * 10 + ["average"] * 10)]
+    ss = FakeSpreadsheet([tab("Research", research), tab("Playbook", []), tab("Examples", [])])
+
+    feats = {"hook_type": "action_first", "text_on_screen_first_second": True, "payoff_second": 12,
+             "caption_style": "none", "layout": "full_vertical", "facecam": False, "zoom_ins": 2, "cuts": 5,
+             "sound_effects": ["none"], "background_music": False, "music_type": "none", "loop_ending": False,
+             "pace": "fast", "content_type": "chaos", "topic": "car crash", "opening_type": "payoff_first",
+             "setup_seconds": 1, "middle_type": "multiple_beats", "beats": 3, "dead_air_seconds": 1,
+             "ending_type": "cut_on_payoff", "story": "a -> b -> c"}
+
+    class Gem:
+        calls_this_run = 0
+
+        def __init__(self, *a, **k):
+            pass
+
+        def remaining(self):
+            return 100
+
+        def generate_json(self, *a, **k):
+            Gem.calls_this_run += 1
+            return dict(feats), "fake-model"
+
+    class NoYouTube:
+        def __init__(self, *a, **k):
+            raise AssertionError("deep mode must not use the YouTube API")
+
+    monkeypatch.setattr(sheets, "get_client", lambda: None)
+    monkeypatch.setattr(sheets, "open_sheet", lambda c, i: ss)
+    monkeypatch.setattr(researcher, "Gemini", Gem)
+    monkeypatch.setattr(researcher, "Usage", lambda *a, **k: None)
+    monkeypatch.setattr(researcher, "YouTube", NoYouTube)
+    assert researcher.main(["deep"]) in (0, None)
+    assert Gem.calls_this_run == 20
+    rows = sheets.read_records(ss.worksheet("Research"))
+    assert all("opening_type" in _j.loads(r["features"]) for r in rows)
+    play = {r["rule_id"]: r for r in sheets.read_records(ss.worksheet("Playbook"))}
+    assert "START: payoff first" in play["style.structure"]["rule"]
