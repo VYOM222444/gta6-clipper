@@ -42,6 +42,7 @@
     "watcher:gemini-flash-lite-latest": 4
   },
   "2026-11-26": {
-    "watcher": 1
+    "watcher": 1,
+    "watcher:gemini-flash-lite-latest": 1
   }
 }
