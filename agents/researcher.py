@@ -953,8 +953,15 @@ def main(argv=None):
         for note in notes:
             print(f"  {note}")
         sheets.set_values(ws, TABS[TAB], "research_id", updates)
-        print(f"Analysed {sum(1 for u in updates.values() if 'model' in u)}; Gemini calls this run: "
-              f"{gem.calls_this_run}.")
+        done = sum(1 for u in updates.values() if 'model' in u)
+        print(f"Analysed {done}; Gemini calls this run: {gem.calls_this_run}.")
+        if deep:
+            left = len(pick_deep(records, 10 ** 6)) - len(updates)
+            more = done > 0 and left > 0 and gem.remaining() > 0
+            print(f"Deep backlog: {max(left, 0)} Shorts still to analyse; Gemini calls left today: "
+                  f"{gem.remaining()}. {'Starting another deep run.' if more else 'No new run.'}")
+            if more:  # the workflow reads this file and starts the next deep run right away
+                (REPO_ROOT / "data" / ".deep_continue").write_text("1")
 
     if step in (None, "findings"):
         records = sheets.read_records(ws)

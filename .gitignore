@@ -5,3 +5,4 @@ __pycache__/
 *.json.key
 service_account*.json
 .env
+data/.deep_continue

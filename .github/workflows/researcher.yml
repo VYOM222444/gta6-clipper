@@ -29,7 +29,7 @@ on:
 
 permissions:
   contents: write
-  actions: read
+  actions: write
 
 concurrency:
   group: researcher
@@ -155,6 +155,11 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python -m agents.researcher deep
+      - name: Start the next deep run (backlog left and Gemini budget left today)
+        if: success() && hashFiles('data/.deep_continue') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run researcher.yml --ref "$GITHUB_REF_NAME" -f mode=deep
       - name: Save Gemini call counter
         if: always()
         run: |
