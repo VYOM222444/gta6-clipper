@@ -863,3 +863,14 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   score += `decider.trick_fit_weight` (0.1) x (trick_fit - 5): a small bonus, so a better moment
   always beats a better-fitting one. The Renderer already applies every built trick on every clip
   (Playbook-driven edits + skills at 1.0). 225 tests.
+- 2026-11-27 (stream clips vs other Shorts): owner: an editing style that works for stream clips may
+  not work for other Shorts, so categorise first. Researcher's Gemini tags now include `format`
+  (`lib/formats.py`: stream_clip, gameplay_clip, comparison, edit_montage, skit_irl, news_talk,
+  other); `formats.group_of` -> "stream" (stream_clip) or "other"; rows tagged before `format` existed:
+  facecam / split-screen facecam = stream. `researcher.skill_rows` keeps only the group in
+  `settings.researcher.skill_group` ("stream") for everything that builds or chooses editing skills:
+  style.*, clip length, story shape, gap report, viral tricks, Examples tab, style.viral_tricks (Watcher);
+  falls back to all formats while that group has < min_group winners (log: "Editing skills judged
+  on: ..."). Research findings (DO/AVOID) stay on all Shorts, plus a `format` comparison. Deep mode
+  re-tags every Short missing `format` (winners first), so the backfill takes a few days of the
+  350/day budget. Examples `style` starts with the format. 226 tests.

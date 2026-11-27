@@ -313,6 +313,8 @@
       "fallback_views_per_sub": 0.1,
       "fallback_views": 5000
     },
+    "skill_group": "stream",
+    "_skill_group_note": "Viral tricks, Examples, gap report, style, story shape and clip length come only from Shorts of this format group (lib/formats.py): stream clips. Falls back to all formats while < min_group winners are tagged.",
     "examples": {
       "_note": "Examples tab: top `tricks` viral-right-now tricks x `per_trick` example Shorts + `top` breakouts (lib/examples.py).",
       "tricks": 5,

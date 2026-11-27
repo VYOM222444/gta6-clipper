@@ -23,6 +23,8 @@ def _num(v):
 def describe(f):
     """Short human summary of a Short's editing from its Gemini tags."""
     bits = []
+    if f.get("format"):
+        bits.append(str(f["format"]).replace("_", " "))
     if f.get("layout"):
         bits.append(str(f["layout"]).replace("_", " "))
     if f.get("caption_style") not in (None, "", "none"):
