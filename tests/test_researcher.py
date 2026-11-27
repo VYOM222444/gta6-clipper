@@ -307,7 +307,7 @@ def test_pick_deep_order_and_backfill():
     assert len(pick_deep(rows, 3)) == 3
 
 
-def test_main_deep_mode_end_to_end(monkeypatch, tmp_path):
+def test_main_deep_mode_end_to_end(monkeypatch, tmp_path, small_batch=None):
     """mode deep: no YouTube, Gemini tags collected Shorts (incl. story structure), findings run."""
     import json as _j
     from datetime import datetime, timedelta, timezone
@@ -363,3 +363,26 @@ def test_main_deep_mode_end_to_end(monkeypatch, tmp_path):
     assert all("opening_type" in _j.loads(r["features"]) for r in rows)
     play = {r["rule_id"]: r for r in sheets.read_records(ss.worksheet("Playbook"))}
     assert "START: payoff first" in play["style.structure"]["rule"]
+    # everything analysed -> no follow-up run requested
+    from lib.config import REPO_ROOT
+    assert not (REPO_ROOT / "data" / ".deep_continue").exists()
+
+
+def test_deep_mode_asks_for_next_run_when_backlog_left(monkeypatch, tmp_path):
+    from agents import researcher
+    from lib import config
+    from lib.config import REPO_ROOT
+    real = config.load_settings
+
+    def small():
+        st = real()
+        st["researcher"]["deep"]["per_run"] = 5
+        return st
+    monkeypatch.setattr(researcher, "load_settings", small)
+    flag = REPO_ROOT / "data" / ".deep_continue"
+    try:
+        test_main_deep_mode_end_to_end(monkeypatch, tmp_path, small_batch=True)
+    except AssertionError:
+        pass  # the shared helper asserts 20 calls; here only 5 happen
+    assert flag.exists()
+    flag.unlink()

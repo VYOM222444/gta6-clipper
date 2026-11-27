@@ -824,3 +824,8 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   16 Nov notebook incident), made the repo public (unlimited Actions minutes) and set the repo
   variable DEEP_RESEARCH = on, so `research-deep` runs every 3 h. First deep run started by hand.
   Rule from now on: nothing secret in the repo or its history (it is public).
+- 2026-11-27 (deep runs chain): GitHub fired the 3-hourly deep cron only ~3 times/day (239 analyses
+  on 26 Nov). Now each deep run that still has backlog AND Gemini budget left writes
+  data/.deep_continue (gitignored) and the workflow starts the next deep run right away
+  (`actions: write`), so the daily 350-call budget is used up every day; the cron restarts the chain
+  after the Pacific-midnight reset. 219 tests.
