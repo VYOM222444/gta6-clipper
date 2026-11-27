@@ -289,8 +289,8 @@ def test_baseline_refresh_excludes_the_short_itself():
 def test_pick_deep_order_and_backfill():
     import json as _j
     from agents.researcher import pick_deep
-    old = _j.dumps({"hook_type": "action_first"})              # analysed before story tags existed
-    new = _j.dumps({"hook_type": "action_first", "opening_type": "payoff_first"})
+    old = _j.dumps({"hook_type": "action_first", "opening_type": "payoff_first"})   # before `format` existed
+    new = _j.dumps({"hook_type": "action_first", "opening_type": "payoff_first", "format": "stream_clip"})
     rows = [{"research_id": "w_new", "label": "winner", "features": "", "age_days": 5},
             {"research_id": "w_old", "label": "winner", "features": old, "age_days": 4},
             {"research_id": "w_done", "label": "winner", "features": new, "age_days": 3},
@@ -387,3 +387,28 @@ def test_deep_mode_asks_for_next_run_when_backlog_left(monkeypatch, tmp_path):
         pass  # the shared helper asserts 20 calls; here only 5 happen
     assert flag.exists()
     flag.unlink()
+
+
+def test_skill_lists_come_from_stream_clips_only():
+    from datetime import datetime, timezone
+    from agents import researcher
+    from lib import formats
+    from lib.config import load_settings
+    assert formats.group_of({"format": "stream_clip"}) == "stream"
+    assert formats.group_of({"format": "skit_irl", "facecam": True}) == "other"   # the tag wins
+    assert formats.group_of({"facecam": True}) == "stream"                        # old rows: guess
+    assert formats.group_of({"layout": "full_vertical"}) == "other"
+    now = datetime(2026, 11, 27, 12, tzinfo=timezone.utc)
+    t = "2026-11-27T06:00:00Z"
+    settings = load_settings()
+
+    def row(i, label, fmt):
+        return {"research_id": f"{fmt}{label}{i}", "label": label, "analyzed_at": t, "collected_at": t,
+                "features": json.dumps({"format": fmt, "emoji_or_stickers": fmt == "skit_irl"})}
+    rows = [row(i, lab, fmt) for i in range(10) for lab in ("winner", "average")
+            for fmt in ("stream_clip", "skit_irl")]
+    sub, basis = researcher.skill_rows(rows, settings, now)
+    assert len(sub) == 20 and all("stream_clip" in r["research_id"] for r in sub)
+    assert basis.startswith("stream clips only")
+    few, basis2 = researcher.skill_rows(rows[:8], settings, now)      # 2 stream winners: too few
+    assert few == rows[:8] and basis2.startswith("all formats")
