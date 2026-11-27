@@ -130,12 +130,23 @@ def plan(duration, payoff, hits, flags, cfg):
          "whooshes": whooshes, "payoff": payoff, "shake": None, "freeze": None}
     if flags.get("shake") and payoff is not None and payoff < end - 0.2:
         p["shake"] = (round(payoff, 2), round(min(end, payoff + cfg.get("shake_seconds", 0.4)), 2))
+    # loop ending: not with a slow-mo replay (the clip would loop into the replay, not the action)
+    p["loop"] = bool(flags.get("loop")) and not p["replay"] and end >= 4
     if flags.get("freeze") and payoff is not None and 0.3 < payoff < end - 0.3:
         f = cfg.get("freeze_seconds", 0.6)
         p["freeze"] = (round(payoff, 2), f)
-        # everything after the frozen frame plays f seconds later
-        p["whooshes"] = [round(t + f, 2) if t > payoff else t for t in p["whooshes"]]
-        p["impacts"] = [round(t + f, 2) if t > payoff + 0.05 else t for t in p["impacts"]]
+        if cfg.get("freeze_style", "punch") == "punch":
+            # punch freeze: the frozen frame covers the next f seconds while the sound plays on (no
+            # silence, timeline unchanged); the shake comes right after it instead of under it
+            f = min(f, round(end - payoff - 0.2, 2))
+            p["freeze"] = (round(payoff, 2), f)
+            if p["shake"]:
+                a = round(payoff + f, 2)
+                p["shake"] = (a, round(min(end, a + cfg.get("shake_seconds", 0.4)), 2)) if a < end - 0.2 else None
+        else:
+            # hold: everything after the frozen frame plays f seconds later
+            p["whooshes"] = [round(t + f, 2) if t > payoff else t for t in p["whooshes"]]
+            p["impacts"] = [round(t + f, 2) if t > payoff + 0.05 else t for t in p["impacts"]]
     return p
 
 
@@ -163,6 +174,8 @@ def tags(p, remove_music=False):
         out.append("shake")
     if p.get("freeze"):
         out.append("freeze")
+    if p.get("loop"):
+        out.append("loop")
     if p["payoff"] is not None and p["end"] < p.get("source_end", p["end"] + 1):
         out.append("cut")
     if remove_music:
@@ -171,6 +184,54 @@ def tags(p, remove_music=False):
 
 
 # --- ffmpeg pieces ------------------------------------------------------------------------------
+
+def loop_points(frames, fps, lo, hi, max_start=0.5, min_len=4.0):
+    """Loop ending like viral Shorts (studied 27 Nov): a HARD cut where the last frame looks like
+    the first. frames = small grey frames of the finished clip at `fps`. The end is searched in
+    [lo, hi] seconds (just after the payoff, owner's choice: never run on past it); the start may
+    move up to `max_start` s in. -> (start_s, end_s, jump) with the smallest picture jump, or None."""
+    n = len(frames)
+    if n < 2:
+        return None
+    s_max = min(int(max_start * fps), n // 4)
+    e_lo = max(int(round(lo * fps)) - 1, int(min_len * fps), 0)
+    e_hi = min(int(round(hi * fps)), n)
+    best = None
+    for s in range(0, s_max + 1):
+        for e in range(max(e_lo, s + int(min_len * fps)), e_hi):
+            jump = float(abs(frames[e] - frames[s]).mean())
+            if best is None or jump < best[2] - 1e-6:
+                best = (s, e, jump)
+    if best is None:
+        return None
+    s, e, jump = best
+    return round(s / fps, 3), round((e + 1) / fps, 3), round(jump, 2)
+
+
+def loop_cmd(src, dst, start, end, has_audio=True, fade=0.03):
+    """Cut the finished clip to [start, end): the replay then jumps from the last frame straight
+    to a frame that looks like it (hard cut, no cross-fade: a fade ghosts both pictures). Sound gets
+    a tiny 30 ms fade at both ends so the cut never clicks. Basic filters only."""
+    length = round(end - start, 3)
+    fc = f"[0:v]trim=start={start}:end={end},setpts=PTS-STARTPTS,format=yuv420p[v]"
+    maps = ["-map", "[v]"]
+    if has_audio:
+        fc += (f";[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS,"
+               f"afade=t=in:d={fade},afade=t=out:st={round(length - fade, 3)}:d={fade}[a]")
+        maps += ["-map", "[a]", "-c:a", "aac", "-b:a", "160k"]
+    return ["ffmpeg", "-y", "-v", "error", "-i", str(src), "-filter_complex", fc, *maps,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-movflags", "+faststart", str(dst)]
+
+
+def loop_window(p, duration, tail=2.0):
+    """Where a looped clip may end, in seconds of the finished clip: from just after the payoff
+    (+ freeze) to `tail` s later, so it always 'ends right after the payoff' (owner chose this over
+    running on until the scene looks like the start, 27 Nov). No payoff known -> the last `tail` s."""
+    if p.get("payoff") is None:
+        return round(max(0.0, duration - tail), 2), round(duration, 2)
+    lo = p["payoff"] + (p["freeze"][1] if p.get("freeze") else 0) + 0.3   # after the freeze too
+    return round(lo, 2), round(min(duration, lo + tail), 2)
+
 
 def zoom_chain(src, dst, zooms, w, h, amount=0.12, hold=0.7):
     """Punch-in zooms with only basic filters (old ffmpeg, e.g. Colab's 4.4, has no time variable
@@ -216,7 +277,22 @@ def pass2_cmd(main, out, p, impact_path, whoosh_path, cfg):
                f"scale=1080:1920,setsar=1[sj]",
                f"[sb][sj]overlay=0:0:enable='between(t,{a},{b})'[shk]"]
         mv = "[shk]"
-    if freeze:  # hold the payoff frame (sound paused) then carry on
+    if freeze and cfg.get("freeze_style", "punch") == "punch":
+        # The payoff frame, zoomed in a bit with a short white flash, covers the next f seconds while
+        # the sound keeps playing: reads as a deliberate freeze, not as the video lagging (owner, 27 Nov:
+        # the old silent hold of the whole frame looked like a lag).
+        t, f = freeze
+        top, bh = p.get("freeze_box") or (0, 1920)   # only the gameplay: a split facecam keeps reacting
+        z = cfg.get("freeze_zoom", 1.08)
+        zw, zh = int(round(1080 * z / 2) * 2), int(round(bh * z / 2) * 2)
+        fc += [f"{mv}split=2[fzm][fz0]",
+               f"[fz0]trim=start={t}:duration=0.04,setpts=PTS-STARTPTS,crop=1080:{bh}:0:{top},"
+               f"scale={zw}:{zh},crop=1080:{bh},"
+               f"tpad=stop_mode=clone:stop_duration={f},setpts=PTS+{t}/TB[fzf]",
+               f"[fzm][fzf]overlay=0:{top}:eof_action=pass,"
+               f"drawbox=x=0:y={top}:w=iw:h={bh}:color=white@0.55:t=fill:enable='between(t,{t},{round(t + 0.07, 2)})'[frz]"]
+        mv = "[frz]"
+    elif freeze:  # hold the payoff frame (sound paused) then carry on
         t, f = freeze
         fc += [f"{mv}split=3[fa0][fb0][fc0]",
                f"[fa0]trim=0:{t},setpts=PTS-STARTPTS[fa]",

@@ -840,3 +840,27 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   data/.deep_continue (gitignored) and the workflow starts the next deep run right away
   (`actions: write`), so the daily 350-call budget is used up every day; the cron restarts the chain
   after the Pacific-midnight reset. 219 tests.
+- 2026-11-27 (loop ending skill): latest gap report (152 winners): the #1 viral trick "ends right
+  after the payoff" (72 h: winners 47% vs 25%) was already built and switches on from the Playbook;
+  emoji, fast cuts, voiceover, meme sounds are used LESS by winners (not built). Loop ending
+  (72 h: 22% vs 15%) built: `edits.loop_cmd` = last pass on the finished clip: the clip starts
+  0.3 s in (`render.edits.loop_seconds`) and its last 0.3 s cross-fade (xfade + acrossfade; the
+  file is opened twice because split + acrossfade gives no audio) into the first 0.3 s, so the
+  last frame = the opening frame and YouTube's replay shows no jump. Never with a slow-mo replay;
+  clips >= 4 s. On every clip (`experiments.loop = 1.0`), tag `loop`; failure -> clip kept without
+  it. lib/skills loop_ending have=True. Verified with ffmpeg (first vs last frame mean diff 1.6/255,
+  audio kept). 220 tests.
+- 2026-11-27 (loop ending v2 + freeze fix, owner review): owner sent 4 screen recordings of viral
+  loop Shorts. Measured: every restart is a HARD cut (one-frame jump, no fade; YouTube itself adds a
+  ~0.1 s freeze + silence on replay), the end is a frame that looks like the opening, and the top text
+  stays on screen the whole video. v1's 0.3 s cross-fade ghosted, so: `edits.loop_points` picks the
+  (start <= 0.5 s, end) pair with the smallest picture jump (48 px grey frames at 10 fps) inside
+  `edits.loop_window` = just after the payoff (+ freeze) to 2 s later (owner chose "A: end at the
+  payoff" over "B: run on until the scene looks like the start"); `loop_cmd` = trim with 30 ms audio
+  fades; `build_ass(hook_full=True)` keeps the hook on screen all clip, no pop, when looping.
+  Settings loop_max_start/loop_tail/loop_fps (loop_seconds gone). Owner also saw a "lag" at 5-6 s: the
+  freeze frame held the WHOLE frame with silence. New default `freeze_style: punch`: only the
+  gameplay (`render.freeze_box`: below the hook text; a split facecam keeps reacting) freezes, zoomed
+  1.08x with a 0.07 s white flash, while the sound plays on (timeline unchanged; shake moved right
+  after the freeze); old behaviour = `freeze_style: hold`. Verified on the Techno Gamerz crash clip
+  through render_one. 222 tests.

@@ -181,12 +181,18 @@
       "rest_volume": 0.3,
       "experiments": {
         "shake": 1.0,
-        "freeze": 1.0
+        "freeze": 1.0,
+        "loop": 1.0
       },
       "_experiments_note": "Skills under test: each goes on this share of clips at random (stable per clip); template_version tags (shake/freeze) let the Analyst compare our own posts with vs without.",
       "shake_seconds": 0.4,
       "shake_pixels": 18,
-      "freeze_seconds": 0.6
+      "freeze_seconds": 0.6,
+      "freeze_style": "punch",
+      "freeze_zoom": 1.08,
+      "loop_max_start": 0.5,
+      "loop_tail": 2.0,
+      "loop_fps": 10
     },
     "style_defaults": {
       "_note": "Used until the Researcher has enough analysed winners; then Playbook style.* rows decide (lib/style.py).",

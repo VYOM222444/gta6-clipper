@@ -29,7 +29,7 @@ SKILLS = {
     "split_screen_facecam": ("split-screen facecam", lambda f: f.get("layout") == "split_screen_facecam", True),  # experiment
     "slow_motion": ("slow motion inside the clip", lambda f: f.get("slow_motion") is True, False),
     "emoji_or_stickers": ("emoji / sticker pop-ups", lambda f: f.get("emoji_or_stickers") is True, False),
-    "loop_ending": ("loop ending", lambda f: f.get("loop_ending") is True, False),
+    "loop_ending": ("loop ending", lambda f: f.get("loop_ending") is True, True),
     "sfx_riser": ("riser sound", lambda f: "riser" in (f.get("sound_effects") or []), False),
     "sfx_record_scratch": ("record-scratch sound", lambda f: "record_scratch" in (f.get("sound_effects") or []), False),
     "sfx_meme_sound": ("meme sounds", lambda f: "meme_sound" in (f.get("sound_effects") or []), False),
