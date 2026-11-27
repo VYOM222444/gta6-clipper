@@ -853,3 +853,13 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   1.08x with a 0.07 s white flash, while the sound plays on (timeline unchanged; shake moved right
   after the freeze); old behaviour = `freeze_style: hold`. Verified on the Techno Gamerz crash clip
   through render_one. 222 tests.
+- 2026-11-27 (best moments, fitted to the viral tricks): owner: pick the BEST moments and fit them into
+  the most viral editing style. Researcher findings now write Playbook `style.viral_tricks` (top 3
+  viral-right-now tricks the Renderer CAN do, `researcher.examples.fit_tricks`) and `alerts.new_trick`
+  (a trick in the viral top 3 we can't do yet + 3 example links; the daily health check tells the
+  owner to screen-record one so the skill gets built the same day). Watcher prompt lists those tricks
+  with what a moment needs for each (`lib/skills.FIT_NEEDS`) and Gemini returns `trick_fit` 1-10 +
+  `fit_note` (new Moments columns, at the end); `quality` must stay about the moment itself. Decider:
+  score += `decider.trick_fit_weight` (0.1) x (trick_fit - 5): a small bonus, so a better moment
+  always beats a better-fitting one. The Renderer already applies every built trick on every clip
+  (Playbook-driven edits + skills at 1.0). 225 tests.

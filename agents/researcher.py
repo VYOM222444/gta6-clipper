@@ -981,8 +981,12 @@ def main(argv=None):
         gp = gap_rows(records, settings, now)
         hot, basis = viral_tricks_now(records, settings, now)
         ecfg = settings["researcher"].get("examples", {})
-        ex = examples.build(winner_entries(records, settings, now), hot, iso(now), ecfg.get("tricks", 5),
+        entries = winner_entries(records, settings, now)
+        ex = examples.build(entries, hot, iso(now), ecfg.get("tricks", 5),
                             ecfg.get("per_trick", 10), ecfg.get("top", 10))
+        play += examples.playbook_rows(hot, entries, basis, iso(now),
+                                       ecfg.get("fit_tricks", 3))
+        print(f"  {play[-1]['rule']}")
         if ex:
             sheets.upsert_rows(ss.worksheet("Examples"), TABS["Examples"], "example_id", ex)
             print(f"Viral tricks right now ({basis}):")

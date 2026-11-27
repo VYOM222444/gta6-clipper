@@ -6,6 +6,8 @@ average). The top `tricks` get `per` example Shorts each (best breakouts first),
 "TOP breakouts" list of any style. The owner downloads them (Colab, agents/fetch_examples.py) and
 sends them to Claude in chat to build the skill. Fixed slots, overwritten every Researcher run.
 """
+import json
+
 from lib.skills import SKILLS
 
 TOP = "TOP breakouts (any style)"
@@ -81,3 +83,45 @@ def build(entries, tricks_ranked, updated_at, tricks=5, per=10, top=10):
     for i in range(top):
         out.append(rec("top", TOP, "", i + 1, None, ranked[i] if i < len(ranked) else None))
     return out
+
+
+def playbook_rows(hot, entries, basis, updated_at, n=3):
+    """Playbook rows from the viral ranking:
+    - `style.viral_tricks`: the top `n` viral tricks the Renderer CAN do (value = JSON list), so the
+      Watcher picks moments that suit them;
+    - `alerts.new_trick`: the best viral trick we can't do yet, if it is in the top `n` overall,
+      with 3 example links (the daily health check tells the owner to send one)."""
+    have = [{"key": t["key"], "name": t["name"], "w": round(t["w"], 2), "a": round(t["a"], 2)}
+            for t in hot if t["have"]][:n]
+    text = "; ".join(f"{t['name']} (winners {round(t['w'] * 100)}% vs average {round(t['a'] * 100)}%)"
+                     for t in have) or "none yet"
+    rows = [{"rule_id": "style.viral_tricks", "section": "style",
+             "rule": f"viral tricks we can do (pick moments that suit them): {text}",
+             "value": json.dumps(have), "source": f"researcher viral tricks ({basis})",
+             "updated_at": updated_at}]
+    new = next((t for t in hot[:n] if not t["have"]), None)
+    if new:
+        ranked = sorted(entries, key=lambda e: (_num(e[0].get("breakout")), _num(e[0].get("views"))),
+                        reverse=True)
+        urls = [e[0].get("url", "") for e in ranked if SKILLS[new["key"]][1](e[1]) and e[0].get("url")][:3]
+        rule = (f"NEW VIRAL TRICK not built yet: {new['name']} (#{hot.index(new) + 1}, winners "
+                f"{round(new['w'] * 100)}% vs average {round(new['a'] * 100)}%). Send Claude a screen "
+                f"recording of one: {' '.join(urls) or 'see Examples tab'}")
+        value = {"key": new["key"], "name": new["name"], "urls": urls}
+    else:
+        rule, value = "no unbuilt trick in the viral top 3", None
+    rows.append({"rule_id": "alerts.new_trick", "section": "alerts", "rule": rule[:900],
+                 "value": json.dumps(value), "source": f"researcher viral tricks ({basis})",
+                 "updated_at": updated_at})
+    return rows
+
+
+def viral_from_playbook(rows):
+    """style.viral_tricks value -> [{key, name, ...}] (empty when missing)."""
+    for r in rows or []:
+        if r.get("rule_id") == "style.viral_tricks":
+            try:
+                return json.loads(r.get("value") or "[]") or []
+            except (TypeError, ValueError):
+                return []
+    return []

@@ -318,7 +318,8 @@
       "tricks": 5,
       "per_trick": 10,
       "top": 10,
-      "min_use": 0.15
+      "min_use": 0.15,
+      "fit_tricks": 3
     },
     "deep": {
       "_note": "mode deep: no YouTube; analyse collected Shorts (winners first, then comparison groups, then backfill of new tags). Scheduled every 3 h when repo variable DEEP_RESEARCH = on.",
@@ -341,7 +342,9 @@
       "Gone": -2.0
     },
     "age_penalty_per_hour": 0.03,
-    "partly_clipped_penalty": 0.5
+    "partly_clipped_penalty": 0.5,
+    "trick_fit_weight": 0.1,
+    "_trick_fit_note": "score += weight x (trick_fit - 5): fit 10 = +0.5, fit 1 = -0.4 (quality 1-10 still decides)"
   },
   "posts": {
     "auto_discover": true,

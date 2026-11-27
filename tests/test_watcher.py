@@ -173,3 +173,19 @@ def test_busy_twice_gives_up_and_failed_videos_are_skipped():
     _, _, wvid, _ = watcher.run(BusyGem([]), jobs, set(), set(), RULES, 4, NOW)
     assert wvid == {"a": "watch_failed"}
     assert watcher.pick_jobs([cand("a", status="watch_failed")], [sig("a", 100, 160, 5)], RULES) == []
+
+
+def test_viral_tricks_in_prompt_and_trick_fit_saved():
+    rules = {**RULES, "viral_tricks": [{"key": "screen_shake", "name": "screen shake"},
+                                       {"key": "loop_ending", "name": "loop ending"}]}
+    p = watcher.build_prompt(cand("a"), [], rules)
+    assert "1. screen shake: needs one violent hit" in p and "2. loop ending" in p
+    assert "`trick_fit`" in p and "never on the tricks" in p
+    assert "trick_fit" not in watcher.build_prompt(cand("a"), [], RULES)
+    job = {"candidate": cand("a"), "windows": [(100.0, 160.0)], "signal_rows": [sig("a", 100, 160, 5)]}
+    rows = watcher.moments_from_answer({"moments": [gm(trick_fit=14, fit_note="big crash"), gm(start=40, end=55)]},
+                                       job, set(), set(), rules, NOW)
+    assert rows[0]["trick_fit"] == 10 and rows[0]["fit_note"] == "big crash"
+    assert rows[1]["trick_fit"] == ""          # Gemini didn't rate it
+    plain = watcher.moments_from_answer({"moments": [gm(trick_fit=9)]}, job, set(), set(), RULES, NOW)
+    assert plain[0]["trick_fit"] == ""          # no viral tricks known -> nothing saved
