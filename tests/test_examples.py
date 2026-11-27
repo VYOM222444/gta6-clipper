@@ -31,3 +31,20 @@ def test_describe():
                            "caption_position": "middle", "hook_text_on_screen": "BRO WHAT",
                            "sound_effects": ["impact", "none"], "cuts": 9})
     assert s == 'split screen facecam, captions word by word middle, hook "BRO WHAT", sfx impact, 9 cuts'
+
+
+def test_playbook_rows_viral_tricks_and_new_trick_alert():
+    hot = [{"key": "emoji_or_stickers", "name": "emoji", "have": False, "w": 0.6, "a": 0.1, "lift": 0.5},
+           {"key": "screen_shake", "name": "screen shake", "have": True, "w": 0.5, "a": 0.2, "lift": 0.3},
+           {"key": "loop_ending", "name": "loop ending", "have": True, "w": 0.3, "a": 0.1, "lift": 0.2},
+           {"key": "freeze_frame", "name": "freeze frame", "have": True, "w": 0.2, "a": 0.1, "lift": 0.1}]
+    entries = [e(i, i, emoji_or_stickers=True) for i in range(1, 6)]
+    rows = {r["rule_id"]: r for r in examples.playbook_rows(hot, entries, "72 h", "now", n=3)}
+    viral = examples.viral_from_playbook(rows.values())
+    assert [t["key"] for t in viral] == ["screen_shake", "loop_ending", "freeze_frame"]   # only ones we can do
+    alert = rows["alerts.new_trick"]
+    assert "NEW VIRAL TRICK" in alert["rule"] and "emoji" in alert["rule"]
+    assert alert["rule"].count("https://") == 3 and "v5" in alert["rule"]                # best breakouts
+    calm = {r["rule_id"]: r for r in examples.playbook_rows(hot[1:], entries, "72 h", "now")}
+    assert calm["alerts.new_trick"]["value"] == "null"
+    assert examples.viral_from_playbook([]) == []

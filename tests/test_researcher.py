@@ -363,6 +363,7 @@ def test_main_deep_mode_end_to_end(monkeypatch, tmp_path, small_batch=None):
     assert all("opening_type" in _j.loads(r["features"]) for r in rows)
     play = {r["rule_id"]: r for r in sheets.read_records(ss.worksheet("Playbook"))}
     assert "START: payoff first" in play["style.structure"]["rule"]
+    assert "style.viral_tricks" in play and "alerts.new_trick" in play
     # everything analysed -> no follow-up run requested
     from lib.config import REPO_ROOT
     assert not (REPO_ROOT / "data" / ".deep_continue").exists()
