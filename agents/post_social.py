@@ -13,7 +13,9 @@ Drive folder with the service account email as Viewer) and uploaded straight to 
 Caption = Batch.ig_caption (Instagram and Facebook). Results -> Batch ig_status / ig_url /
 fb_status / fb_url / social_at, and Posted rows `<batch_id>-instagram` / `<batch_id>-facebook`.
 
-META_TOKENS_JSON (GitHub secret, never printed):
+META_TOKENS_JSON (GitHub secret, never printed), either Meta's me/accounts answer pasted as-is
+({"data": [{"name": "Wasted Again", "id": ..., "access_token": ..., "instagram_business_account": ...}]},
+Pages matched to brands by name) or
 {"wasted_again": {"ig_user_id": "1784...", "page_id": "1093...", "token": "<Page access token>"}, ...}
 A Page token made from a long-lived user token does not expire. Missing page_id -> no Facebook.
 
@@ -49,14 +51,39 @@ def parse_time(s):
         return None
 
 
-def load_tokens(env=None):
+def _norm(x):
+    return "".join(ch for ch in str(x).lower() if ch.isalnum())
+
+
+def tokens_from_accounts(data, brands):
+    """Meta's `me/accounts?fields=name,id,access_token,instagram_business_account` answer, pasted
+    as-is into the secret -> {brand_key: {...}}. A Page belongs to the brand whose name (or key)
+    its name contains, e.g. Page "Wasted Again Clips" -> wasted_again."""
+    out = {}
+    for page in data.get("data") or []:
+        name = _norm(page.get("name", ""))
+        for b in brands:
+            if b["key"] in out or not page.get("access_token"):
+                continue
+            if _norm(b.get("name", "")) in name or _norm(b["key"]) in name:
+                out[b["key"]] = {"token": page["access_token"], "page_id": str(page.get("id", "")),
+                                 "ig_user_id": str((page.get("instagram_business_account") or {}).get("id", ""))}
+                break
+    return out
+
+
+def load_tokens(env=None, brands=None):
+    """Secret META_TOKENS_JSON in either form: {brand_key: {token, page_id, ig_user_id}} or Meta's
+    me/accounts answer copied straight from Graph API Explorer ({"data": [...pages...]})."""
     raw = (os.environ if env is None else env).get(ENV, "").strip()
     if not raw:
         return {}
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        raise MetaError(f"secret {ENV} is not valid JSON")
+        raise MetaError(f"secret {ENV} is not valid JSON (copy Meta's whole answer, from {{ to }})")
+    if isinstance(data, dict) and isinstance(data.get("data"), list):
+        return tokens_from_accounts(data, brands if brands is not None else load_settings()["brands"])
     return {k: v for k, v in data.items() if isinstance(v, dict) and v.get("token")}
 
 
@@ -206,8 +233,13 @@ def main(argv=None):
         print(f"SOCIAL FAILED: {e}")
         return 1
     if not tokens:
-        print(f"Social posting not set up yet (secret {ENV} empty). Nothing posted.")
+        print(f"Social posting not set up yet (secret {ENV} empty or no Page matched a brand). Nothing posted.")
         return 0
+    for b in settings["brands"]:   # names only, never tokens
+        t = tokens.get(b["key"])
+        print(f"  {b['name']}: " + ("not connected" if not t else
+              f"Instagram {'yes' if t.get('ig_user_id') else 'NO (link the Instagram to the Page)'}, "
+              f"Facebook {'yes' if t.get('page_id') else 'no'}"))
     try:
         ss = sheets.open_sheet(sheets.get_client(), settings["sheet"]["id"])
         sheets.ensure_tab(ss, "Batch", TABS["Batch"])

@@ -330,9 +330,11 @@ hand; normally `agents/decider.py` does this automatically):**
 5. Access Token Debugger: paste the token > "Extend Access Token" (long-lived).
 6. Back in Explorer with that token: GET `me/accounts?fields=name,id,access_token,instagram_business_account`.
    Each Page's access_token does not expire.
-7. GitHub > Settings > Secrets > Actions > New secret `META_TOKENS_JSON`:
-   `{"wasted_again": {"ig_user_id": "<instagram_business_account id>", "page_id": "<Page id>", "token": "<Page access_token>"}, ...}`
-   for all 5 brands. Never paste tokens in chat.
+7. GitHub > Settings > Secrets > Actions > New secret `META_TOKENS_JSON`: paste Meta's whole
+   answer from step 6 as-is (from the first { to the last }); Pages are matched to brands by name
+   (Page name must contain the brand name, e.g. "Wasted Again Clips"). The hand-written form
+   `{"wasted_again": {"ig_user_id": ..., "page_id": ..., "token": ...}, ...}` still works. Never
+   paste tokens in chat.
 8. Google Drive: share the "GTA6 Clipper" folder with the service account email as Viewer.
 9. Actions > Social post > Run workflow with "dry run" ticked: the log lists what would post.
 
@@ -874,3 +876,7 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   on: ..."). Research findings (DO/AVOID) stay on all Shorts, plus a `format` comparison. Deep mode
   re-tags every Short missing `format` (winners first), so the backfill takes a few days of the
   350/day budget. Examples `style` starts with the format. 226 tests.
+- 2026-11-27 (Meta setup made easier): `post_social.load_tokens` also accepts Meta's me/accounts answer
+  pasted as-is into META_TOKENS_JSON (`tokens_from_accounts`: Page name contains the brand name ->
+  token, page_id, ig_user_id), so the owner never hand-writes JSON. Every run (incl. dry run) prints
+  per brand "Instagram yes/NO, Facebook yes/no" (names only, never tokens). 227 tests.
