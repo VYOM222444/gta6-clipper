@@ -122,6 +122,15 @@ def test_hook_is_above_the_label_and_off_the_gameplay():
     assert hook_y < TPL["label"]["y"] < top
 
 
+
+def test_looping_clips_keep_the_hook_on_screen_without_pop():
+    short = next(l for l in render.build_ass(TPL, [], "", "Cops are insane", "", 10.0).splitlines()
+                 if "COPS ARE INSANE" in l)
+    full = next(l for l in render.build_ass(TPL, [], "", "Cops are insane", "", 10.0, hook_full=True).splitlines()
+                if "COPS ARE INSANE" in l)
+    assert "0:00:10.00" not in short and "\\fad" in short        # normal: pops in, gone after a few s
+    assert ",0:00:00.00,0:00:10.00," in full and "\\fad" not in full and "\\t(" not in full
+
 def test_mask_words():
     words = [{"word": "what", "start": 0, "end": 1}, {"word": "Fucking", "start": 1, "end": 2},
              {"word": "shit!", "start": 2, "end": 3}, {"word": "dickens", "start": 3, "end": 4},

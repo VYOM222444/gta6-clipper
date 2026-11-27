@@ -316,7 +316,8 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
     chunks = render.chunk_words(words, tpl["caption"]["max_words"], tpl["caption"]["pause_split"])
     ass_path = work / f"{row['batch_id']}.ass"
     ass_path.write_text(render.build_ass(tpl, chunks, row.get("title_label", ""), row.get("hook_text", ""),
-                                         row.get("creator_credit", ""), dur, w, h, style), encoding="utf-8")
+                                         row.get("creator_credit", ""), dur, w, h, style,
+                                         hook_full=bool(plan and plan.get("loop"))), encoding="utf-8")
     mp4, txt = output_paths(cfg["output_dir"], row, day)
     mp4.parent.mkdir(parents=True, exist_ok=True)
     tmp = work / f"{row['batch_id']}.out.mp4"
@@ -331,7 +332,8 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
         if tpl.get("layout") == "split":
             tpl["layout"] = (style or {}).get("layout", "fill")
             ass_path.write_text(render.build_ass(tpl, chunks, row.get("title_label", ""), row.get("hook_text", ""),
-                                                 row.get("creator_credit", ""), dur, w, h, style), encoding="utf-8")
+                                                 row.get("creator_credit", ""), dur, w, h, style,
+                                                 hook_full=bool(plan and plan.get("loop"))), encoding="utf-8")
         rf_tags = []
         p = subprocess.run(render.ffmpeg_cmd(used, ass_path, cfg["fonts_dir"], tmp, tpl, w, h, end, has_audio),
                            capture_output=True, text=True)
@@ -340,6 +342,7 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
         return {"fetch_status": "done", "render_status": f"failed: {err[:80]} ... {err[-100:]}"}
     edit_tags = []
     if plan:
+        plan["freeze_box"] = render.freeze_box(tpl, w, h, style, bool(row.get("hook_text")))
         cmd = edits.pass2_cmd(tmp, work / f"{row['batch_id']}.fx.mp4", plan, ecfg["impact_path"],
                               ecfg["whoosh_path"], ecfg)
         if cmd:
@@ -352,12 +355,16 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
         if plan.get("loop"):
             looped = work / f"{row['batch_id']}.loop.mp4"
             _, _, tdur, t_audio = probe(tmp)
-            p3 = subprocess.run(edits.loop_cmd(tmp, looped, tdur, ecfg.get("loop_seconds", 0.3), t_audio),
-                                capture_output=True, text=True)
-            if p3.returncode == 0:
+            frames, lfps = reframe.read_gray(tmp, ecfg.get("loop_fps", 10), 48)
+            lo, hi = edits.loop_window(plan, tdur, ecfg.get("loop_tail", 2.0))
+            pts = edits.loop_points(frames, lfps, lo, hi, ecfg.get("loop_max_start", 0.5))
+            p3 = (subprocess.run(edits.loop_cmd(tmp, looped, pts[0], pts[1], t_audio), capture_output=True, text=True)
+                  if pts else None)
+            if p3 is not None and p3.returncode == 0:
                 shutil.move(str(looped), str(tmp))
+                print(f"  loop: {pts[0]}-{pts[1]} s, jump {pts[2]} (0 = identical frames)")
             else:
-                print(f"  note: loop ending failed, clip kept without it ({p3.stderr.strip()[-100:]})")
+                print(f"  note: loop ending skipped ({(p3.stderr.strip()[-100:] if p3 else 'clip too short')})")
                 plan["loop"] = False
         edit_tags = edits.tags(plan, bool(ecfg.get("remove_music")) and used != src)
     edit_tags += rf_tags

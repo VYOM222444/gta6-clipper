@@ -183,8 +183,41 @@ def caption_events(chunks, style, cap, hl, white, duration):
     return lines
 
 
-def build_ass(tpl, chunks, title_label, hook_text, credit, duration, src_w=1920, src_h=1080, style=None):
-    """style (lib/style.py): which elements are shown and how. None = the old fixed look."""
+def hook_pos(tpl, src_w, src_h, style=None):
+    """y (centre) of the hook text: ABOVE the gameplay (or high up on a full-screen clip), never on
+    the payoff; on the seam of a split-screen."""
+    st = dict(DEFAULT_STYLE, **(style or {}))
+    hk = tpl["hook"]
+    _, fg_h, top = layout_boxes(src_w, src_h, tpl)
+    vertical = top == 0
+    if tpl.get("layout") == "split" and top:
+        return top                              # on the seam between facecam and gameplay
+    y = hk.get("y", 250) if not vertical else hk.get("y_vertical", 480)
+    if not st.get("title_label") and not vertical:
+        y = max(y, top - int(hk["size"] * 0.9))
+    return y
+
+
+def freeze_box(tpl, src_w, src_h, style=None, hook=True):
+    """(top, height) of the part a freeze frame may hold: the gameplay (a split facecam keeps
+    reacting), starting below the hook text so the text never jumps."""
+    _, fg_h, top = layout_boxes(src_w, src_h, tpl)
+    if tpl.get("layout") != "split":
+        top, fg_h = 0, H
+    st = dict(DEFAULT_STYLE, **(style or {}))
+    if hook and st.get("hook_text"):
+        below = hook_pos(tpl, src_w, src_h, style) + int(tpl["hook"]["size"] * 0.75)
+        if below > top:
+            fg_h, top = fg_h - (below - top), below
+    fg_h -= fg_h % 2
+    return top + top % 2, fg_h
+
+
+def build_ass(tpl, chunks, title_label, hook_text, credit, duration, src_w=1920, src_h=1080, style=None,
+              hook_full=False):
+    """style (lib/style.py): which elements are shown and how. None = the old fixed look.
+    hook_full: the hook stays on screen the whole clip, with no pop-in (looping clips: viral loops
+    keep their top text all the way, so the replay shows no text popping in again)."""
     st = dict(DEFAULT_STYLE, **(style or {}))
     fonts, acc = tpl["fonts"], tpl["accent"]
     lab, hk, cap, cr = tpl["label"], tpl["hook"], tpl["caption"], tpl["credit"]
@@ -198,12 +231,7 @@ def build_ass(tpl, chunks, title_label, hook_text, credit, duration, src_w=1920,
         credit_y = SAFE_BOTTOM - 40
         if st.get("caption_position", "bottom") == "bottom":
             cap_y = SAFE_BOTTOM - 150
-    # hook sits ABOVE the gameplay (or high up on a full-screen clip), never on the payoff
-    hook_y = hk.get("y", 250) if not vertical else hk.get("y_vertical", 480)
-    if split:
-        hook_y = top                            # on the seam between facecam and gameplay
-    elif not st.get("title_label") and not vertical:
-        hook_y = max(hook_y, top - int(hk["size"] * 0.9))
+    hook_y = hook_pos(tpl, src_w, src_h, st)
 
     head = f"""[Script Info]
 ScriptType: v4.00+
@@ -230,9 +258,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                      f"\\fs{fit_size(text, lab['size'], 900, 0.46)}}}{ass_text(text)}")
     if hook_text and st.get("hook_text"):
         text = hook_text.upper()
-        hook_end = min(hk["seconds"], duration)
+        hook_end = duration if hook_full else min(hk["seconds"], duration)
+        anim = "" if hook_full else f"{POP}\\fad(0,200)"
         lines.append(f"Dialogue: 3,{ass_time(0)},{ass_time(hook_end)},Hook,,0,0,0,,"
-                     f"{{\\pos({W // 2},{hook_y})\\fs{fit_size(text, hk['size'], 980, 0.5)}{POP}\\fad(0,200)}}"
+                     f"{{\\pos({W // 2},{hook_y})\\fs{fit_size(text, hk['size'], 980, 0.5)}{anim}}}"
                      f"{ass_text(text)}")
     if credit:
         lines.append(f"Dialogue: 1,{ass_time(0)},{end},Credit,,0,0,0,,{{\\pos({cr['margin_x']},{credit_y})}}"
