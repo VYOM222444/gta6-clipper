@@ -11,6 +11,8 @@
 - 503s and per-minute 429s were not served, so they are NOT counted against the daily
   budget; a per-minute 429 waits the time Google asks for (<= 60 s) and retries once.
   A daily 429 stops the run (BudgetReached).
+- A 403 means Gemini may not open that video (private, members-only, or a live stream whose
+  recording YouTube hasn't published yet): NotAccessible, the same for every model.
 - Requests are paced to `requests_per_minute` (free tier: 5/min for Flash), shared by all
   parallel threads.
 - The API key is never printed.
@@ -45,6 +47,11 @@ class BudgetReached(GeminiError):
 
 class ModelNotFound(GeminiError):
     pass
+
+
+class NotAccessible(GeminiError):
+    """403: Gemini may not open this video right now (private / members-only, or a live stream
+    whose recording YouTube hasn't published yet). Every model gives the same answer."""
 
 
 class Transient(GeminiError):
@@ -110,6 +117,8 @@ def _http_post(url, body, api_key, timeout=420):
             msg = str(e.code)
         if e.code == 404:
             raise ModelNotFound(msg) from None
+        if e.code == 403:
+            raise NotAccessible(msg) from None
         if e.code == 429:
             if is_per_minute(msg):
                 raise RateLimited(f"per-minute limit: {msg[:160]}", retry_seconds(msg)) from None

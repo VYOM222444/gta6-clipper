@@ -81,6 +81,23 @@ def test_run_end_to_end():
     assert yt.used == 101                       # one search + one stats call
 
 
+def test_no_saturation_search_for_moments_too_old_for_the_decider():
+    # Searches have their own YouTube limit (100/day). Moments older than the Decider's window are
+    # never picked, so re-checking their source videos every 12 h only starves Scout's searches.
+    yt = FakeYouTube()
+    stamp = lambda h: (NOW - timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    stale = {**mom("a"), "watched_at": stamp(200)}
+    fresh = {**mom("b", vid="v2", reason="buys a yacht at the marina", hook="New yacht"),
+             "watched_at": stamp(3)}
+    undated = mom("c", vid="v3", reason="jumps a train with a bike", hook="Train jump")
+    cands = [cand(), cand("v2", "Other"), cand("v3", "Third")]
+    _, c_upd, _ = gatekeeper.run([stale, fresh, undated], cands, [], [], {}, R, yt, NOW, max_age_hours=48)
+    assert sorted(c_upd) == ["v2", "v3"]       # the 200 h old moment's video is not searched
+    assert ("snippets", "BigStreamer GTA 6") not in yt.calls
+    _, c_upd, _ = gatekeeper.run([stale], [cand()], [], [], {}, R, FakeYouTube(), NOW)
+    assert list(c_upd) == ["v1"]               # no age limit given: old behaviour
+
+
 def test_run_without_youtube_key_still_gates():
     m_upd, c_upd, _ = gatekeeper.run([mom("a"), mom("b", start=105)], [cand()], [], [], {}, R, None, NOW)
     assert m_upd == {"b": {"gate_status": "rejected_duplicate",

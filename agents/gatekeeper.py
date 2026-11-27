@@ -16,7 +16,9 @@ moment when it references the source (video id / creator name in title or descri
 and shares >= `min_keyword_overlap` keywords with what happens in the moment. If a match
 has >= `min_views` views, other clippers already own it -> rejected_saturated. Results are
 cached per video in Candidates (sat_checked_at, sat_shorts) and refreshed every
-`recheck_hours`; at most `checks_per_run` new searches per run.
+`recheck_hours`; at most `checks_per_run` new searches per run, and only for moments the
+Decider can still pick (<= decider.max_moment_age_hours old): YouTube allows ~100 searches a
+day per project and Scout needs most of them.
 
 Run:  python -m agents.gatekeeper   (needs YOUTUBE_API_KEY, GOOGLE_SERVICE_ACCOUNT_JSON)
 """
@@ -158,8 +160,16 @@ def needs_check(cand, now, cfg):
 
 # --- run ------------------------------------------------------------------------------------------
 
-def run(moments, candidates, batch, posted, blocklist, rules, yt, now):
-    """Returns (moment_updates, candidate_updates, notes)."""
+def too_old(m, now, max_age_hours):
+    """True if the Decider can no longer pick this moment (same age rule as agents/decider)."""
+    t = parse_time(m.get("watched_at") or m.get("created_at") or "")
+    return bool(max_age_hours and t and now - t > timedelta(hours=max_age_hours))
+
+
+def run(moments, candidates, batch, posted, blocklist, rules, yt, now, max_age_hours=None):
+    """Returns (moment_updates, candidate_updates, notes). Saturation searches are only spent on
+    moments the Decider can still pick (<= `max_age_hours` old): YouTube allows ~100 searches a
+    day for the whole project and Scout needs them."""
     cfg = rules["gatekeeper"]
     sat_cfg = cfg["saturation"]
     cand = {str(c.get("video_id")): c for c in candidates}
@@ -182,6 +192,8 @@ def run(moments, candidates, batch, posted, blocklist, rules, yt, now):
     # saturation: refresh the cache for the videos with the best ready moments first
     best = {}
     for m in ready:
+        if too_old(m, now, max_age_hours):
+            continue  # the Decider won't pick it: don't spend a search on its video
         vid = str(m["video_id"])
         best[vid] = max(best.get(vid, 0), _f(m.get("quality")))
     checks = 0
@@ -241,7 +253,8 @@ def main():
         print(f"note: no saturation check ({e})")
         yt = None
 
-    m_upd, c_upd, notes = run(moments, candidates, batch, posted, load_blocklist(), rules, yt, now)
+    m_upd, c_upd, notes = run(moments, candidates, batch, posted, load_blocklist(), rules, yt, now,
+                              max_age_hours=settings["decider"]["max_moment_age_hours"])
     for n in notes:
         print(f"note: {n}")
     sheets.set_values(m_ws, TABS[TAB], "moment_id", m_upd)

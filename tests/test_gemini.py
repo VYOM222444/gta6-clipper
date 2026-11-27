@@ -180,3 +180,28 @@ def test_fallback_model_has_its_own_budget(tmp_path):
     assert g.remaining() == 2 and g.remaining("lite") == 0
     with pytest.raises(gemini.Unavailable):     # lite budget used, flash busy
         g.generate_json([], "p", {})
+
+
+def test_http_403_means_gemini_cannot_open_the_video(monkeypatch):
+    import io
+    import urllib.error
+
+    def forbidden(*a, **k):
+        body = json.dumps({"error": {"status": "PERMISSION_DENIED",
+                                     "message": "The caller does not have permission"}}).encode()
+        raise urllib.error.HTTPError("u", 403, "Forbidden", {}, io.BytesIO(body))
+    monkeypatch.setattr(gemini.urllib.request, "urlopen", forbidden)
+    with pytest.raises(gemini.NotAccessible, match="PERMISSION_DENIED"):
+        gemini._http_post("https://example.invalid/x", {}, "k")
+
+
+def test_not_accessible_video_is_not_tried_on_other_models(tmp_path):
+    calls = []
+
+    def post(url, body, key):
+        calls.append(url)
+        raise gemini.NotAccessible("403 PERMISSION_DENIED: The caller does not have permission")
+    g = gemini.Gemini(["m1", "m2"], 5, "watcher", api_key="K", usage=usage(tmp_path), http_post=post)
+    with pytest.raises(gemini.NotAccessible):
+        g.generate_json(gemini.video_parts("https://www.youtube.com/watch?v=x"), "p", {})
+    assert len(calls) == 1                     # same answer from every model: don't ask twice

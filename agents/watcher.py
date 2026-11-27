@@ -6,6 +6,10 @@ Jobs, best first:
   2. long videos up to `watcher.whole_video_max_seconds` with no signals: watched whole
 Gemini busy (503/timeout): the video is retried once next run (status watch_retry), then
 it becomes watch_failed so it can't burn the daily budget.
+Gemini may not open the video (403, e.g. a live stream whose recording YouTube hasn't published
+yet: live mode starts Signals the minute the chat ends): status watch_wait, the Signals windows
+stay pending and are tried again every run until `not_ready_retry_hours` after they were found,
+then watch_failed (a private or members-only video never opens).
 Each call returns moments (exact start/end, what happens, content type, quality 1-10,
 standalone?, promo?, hook idea). A basic gate marks each one ready or rejected_*.
 Output -> `Moments` (source=watcher). Signal rows become gate_status=watched and the
@@ -23,7 +27,7 @@ from agents.scout import title_ok
 from lib import sheets
 from lib import style as clip_style
 from lib.config import load_blocklist, load_rules, load_settings
-from lib.gemini import BudgetReached, Gemini, GeminiError, Transient, video_parts
+from lib.gemini import BudgetReached, Gemini, GeminiError, NotAccessible, Transient, video_parts
 from lib.schema import TABS
 
 TAB = "Moments"
@@ -251,6 +255,25 @@ def _ask(gem, job, rules):
         return None, e
 
 
+def _parse_time(s):
+    try:
+        t = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
+def still_waiting(job, now, rules):
+    """A video Gemini may not open (403) is worth another try while it has Signals windows and
+    the newest was found less than `not_ready_retry_hours` ago: a stream's recording is usually
+    published within the hour, a private or members-only video never is."""
+    found = [t for t in (_parse_time(r.get("created_at")) for r in job["signal_rows"]) if t]
+    if not found:
+        return False
+    hours = (now - max(found)).total_seconds() / 3600
+    return hours < rules["watcher"].get("not_ready_retry_hours", 24)
+
+
 def run(gem, jobs, used, block_ids, rules, per_run_cap, now, max_minutes=None, clock=time.monotonic):
     """Ask Gemini about jobs in parallel waves (free tier allows a few requests per minute).
     Returns (moment_rows, watched_signal_ids, watched_video_ids, notes)."""
@@ -284,6 +307,10 @@ def run(gem, jobs, used, block_ids, rules, per_run_cap, now, max_minutes=None, c
                     else:
                         notes.append(f"{vid}: {err} (will retry next run)")
                         watched_vid[vid] = "watch_retry"
+                elif isinstance(err, NotAccessible) and still_waiting(job, now, rules):
+                    notes.append(f"{vid}: {err} (Gemini can't open it yet, e.g. a stream YouTube "
+                                 "hasn't published: will retry next run)")
+                    watched_vid[vid] = "watch_wait"
                 else:
                     notes.append(f"{vid}: {err}")
                     watched_vid[vid] = "watch_failed"  # don't retry it every run

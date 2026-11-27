@@ -162,6 +162,30 @@ def test_timeout_becomes_gemini_error(monkeypatch):
         gemini._http_post("https://example.invalid/x", {}, "k", timeout=1)
 
 
+def test_video_gemini_cannot_open_yet_is_retried_then_given_up():
+    # Live mode: Signals runs the minute a stream's chat ends, before YouTube has published the
+    # recording, so Gemini answers 403. That must not throw the stream's chat moments away.
+    from lib.gemini import NotAccessible
+
+    class NotYetGem(FakeGem):
+        def generate_json(self, parts, prompt, schema):
+            self.calls_this_run += 1
+            raise NotAccessible("403 PERMISSION_DENIED: The caller does not have permission")
+    fresh = {**sig("a", 100, 160, 5), "created_at": "2026-11-20T11:30:00Z"}   # found 30 min ago
+    jobs = watcher.pick_jobs([cand("a", kind="live_vod", dur="0")], [fresh], RULES)
+    _, wsig, wvid, notes = watcher.run(NotYetGem([]), jobs, set(), set(), RULES, 4, NOW)
+    assert wvid == {"a": "watch_wait"} and wsig == {}      # windows stay pending
+    assert any("retry next run" in n for n in notes)
+    assert watcher.pick_jobs([cand("a", kind="live_vod", status="watch_wait")], [fresh], RULES)
+    old = {**fresh, "created_at": "2026-11-19T06:00:00Z"}   # still 403 after a day: give up
+    jobs = watcher.pick_jobs([cand("a", kind="live_vod", status="watch_wait")], [old], RULES)
+    _, _, wvid, _ = watcher.run(NotYetGem([]), jobs, set(), set(), RULES, 4, NOW)
+    assert wvid == {"a": "watch_failed"}
+    jobs = watcher.pick_jobs([cand("b")], [], RULES)         # whole video, no Signals window
+    _, _, wvid, _ = watcher.run(NotYetGem([]), jobs, set(), set(), RULES, 4, NOW)
+    assert wvid == {"b": "watch_failed"}
+
+
 def test_busy_twice_gives_up_and_failed_videos_are_skipped():
     from lib.gemini import Transient
 
