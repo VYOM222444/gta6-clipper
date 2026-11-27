@@ -31,7 +31,7 @@ def test_plan_all_effects():
 def test_plan_nothing_on():
     p = edits.plan(14.0, 9.25, [4.0], {}, CFG)
     assert p == {"end": 14.0, "zooms": [], "replay": None, "impacts": [], "whooshes": [], "payoff": 9.25,
-                 "shake": None, "freeze": None}
+                 "shake": None, "freeze": None, "loop": False}
     assert edits.pass2_cmd("a", "b", p, "i", "w", CFG) is None
 
 
@@ -75,3 +75,19 @@ def test_experiment_flags_are_stable_and_about_half():
     assert 70 < sum(on) < 130
     assert edits.experiment_flags({}, "x-1", {"shake": 0.5}) == edits.experiment_flags({}, "x-1", {"shake": 0.5})
     assert edits.experiment_flags({}, "x-1", {"shake": 0})["shake"] is False
+
+
+def test_loop_ending_plan_and_command():
+    from lib import edits
+    cfg = {"tail_seconds": 1.5, "min_seconds": 8}
+    p = edits.plan(20, 12.0, [], {"loop": True}, cfg)
+    assert p["loop"] and "loop" in edits.tags(p)
+    p2 = edits.plan(20, 12.0, [], {"loop": True, "replay": True}, cfg)
+    assert p2["replay"] and not p2["loop"]          # never loop into a slow-mo replay
+    assert not edits.plan(3, 1.0, [], {"loop": True}, cfg)["loop"]  # too short
+    cmd = edits.loop_cmd("in.mp4", "out.mp4", 10.0, 0.3, True)
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert cmd.count("-i") == 2 and "xfade=transition=fade:duration=0.3:offset=9.4" in fc
+    assert "acrossfade=d=0.3" in fc and "[a]" in cmd
+    silent = edits.loop_cmd("in.mp4", "out.mp4", 10.0, 0.3, False)
+    assert "[a]" not in silent and "acrossfade" not in silent[silent.index("-filter_complex") + 1]

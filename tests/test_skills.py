@@ -14,10 +14,10 @@ def test_report_ranks_missing_tricks_winners_use_more():
     g = skills.report(win, avg)
     by = {x["key"]: x for x in g}
     assert by["emoji_or_stickers"]["verdict"] == "BUILD NEXT"          # 60% vs 0%, can't do
-    assert by["loop_ending"]["verdict"] == "BUILD NEXT"          # 30% vs 0%
+    assert by["loop_ending"]["verdict"] == "HAVE IT"             # 30% vs 0%, built 2026-11-27
     assert by["zoom_ins"]["verdict"] == "HAVE IT"
     assert by["background_music"]["verdict"] == "NOT FOR US"
-    assert g[0]["key"] == "emoji_or_stickers" and g[1]["key"] == "loop_ending"   # biggest gap first
+    assert g[0]["key"] == "emoji_or_stickers"                     # biggest missing gap first
 
 
 def test_small_or_equal_use_is_skipped_and_too_few_winners_gives_nothing():

@@ -130,6 +130,8 @@ def plan(duration, payoff, hits, flags, cfg):
          "whooshes": whooshes, "payoff": payoff, "shake": None, "freeze": None}
     if flags.get("shake") and payoff is not None and payoff < end - 0.2:
         p["shake"] = (round(payoff, 2), round(min(end, payoff + cfg.get("shake_seconds", 0.4)), 2))
+    # loop ending: not with a slow-mo replay (the clip would loop into the replay, not the action)
+    p["loop"] = bool(flags.get("loop")) and not p["replay"] and end >= 4
     if flags.get("freeze") and payoff is not None and 0.3 < payoff < end - 0.3:
         f = cfg.get("freeze_seconds", 0.6)
         p["freeze"] = (round(payoff, 2), f)
@@ -163,6 +165,8 @@ def tags(p, remove_music=False):
         out.append("shake")
     if p.get("freeze"):
         out.append("freeze")
+    if p.get("loop"):
+        out.append("loop")
     if p["payoff"] is not None and p["end"] < p.get("source_end", p["end"] + 1):
         out.append("cut")
     if remove_music:
@@ -171,6 +175,25 @@ def tags(p, remove_music=False):
 
 
 # --- ffmpeg pieces ------------------------------------------------------------------------------
+
+def loop_cmd(src, dst, duration, d=0.3, has_audio=True):
+    """Seamless loop ending (last pass): the clip starts d seconds in, and its last d seconds
+    cross-fade (picture + sound) into the clip's first d seconds. The final frame is then the
+    same frame the Short opens on, so the replay shows no jump. Length: duration - d.
+    The file is opened twice (split + acrossfade on one input gives no audio in ffmpeg).
+    Basic filters only (xfade/acrossfade exist in Colab's ffmpeg 4.4)."""
+    body = round(duration - d, 3)
+    fc = (f"[0:v]trim=start={d},setpts=PTS-STARTPTS[mv];[1:v]trim=0:{d},setpts=PTS-STARTPTS[hv];"
+          f"[mv][hv]xfade=transition=fade:duration={d}:offset={round(body - d, 3)},format=yuv420p[v]")
+    maps = ["-map", "[v]"]
+    if has_audio:
+        fc += (f";[0:a]atrim=start={d},asetpts=PTS-STARTPTS[mav];"
+               f"[1:a]atrim=0:{round(d + 0.1, 3)},asetpts=PTS-STARTPTS[hav];"
+               f"[mav][hav]acrossfade=d={d},atrim=0:{body},asetpts=PTS-STARTPTS[a]")
+        maps += ["-map", "[a]", "-c:a", "aac", "-b:a", "160k"]
+    return ["ffmpeg", "-y", "-v", "error", "-i", str(src), "-i", str(src), "-filter_complex", fc, *maps,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-movflags", "+faststart", str(dst)]
+
 
 def zoom_chain(src, dst, zooms, w, h, amount=0.12, hold=0.7):
     """Punch-in zooms with only basic filters (old ffmpeg, e.g. Colab's 4.4, has no time variable

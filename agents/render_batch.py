@@ -349,6 +349,16 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
             else:
                 print(f"  note: effects pass failed, plain clip kept ({p2.stderr.strip()[-100:]})")
                 plan["replay"], plan["impacts"], plan["whooshes"] = None, [], []
+        if plan.get("loop"):
+            looped = work / f"{row['batch_id']}.loop.mp4"
+            _, _, tdur, t_audio = probe(tmp)
+            p3 = subprocess.run(edits.loop_cmd(tmp, looped, tdur, ecfg.get("loop_seconds", 0.3), t_audio),
+                                capture_output=True, text=True)
+            if p3.returncode == 0:
+                shutil.move(str(looped), str(tmp))
+            else:
+                print(f"  note: loop ending failed, clip kept without it ({p3.stderr.strip()[-100:]})")
+                plan["loop"] = False
         edit_tags = edits.tags(plan, bool(ecfg.get("remove_music")) and used != src)
     edit_tags += rf_tags
     save_preview(tmp, ass_path, chunks, cfg, row, day)
