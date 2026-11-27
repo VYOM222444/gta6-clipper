@@ -217,7 +217,9 @@
     "overlap_seconds": 20,
     "max_run_minutes": 22,
     "parallel_calls": 4,
-    "retry_wait_seconds": 45
+    "retry_wait_seconds": 45,
+    "not_ready_retry_hours": 24,
+    "_not_ready_note": "Gemini 403 (video not published yet, e.g. a live stream that just ended): keep retrying a video's Signals windows for this many hours after they were found, then watch_failed."
   },
   "gatekeeper": {
     "leak_words": [

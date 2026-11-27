@@ -824,6 +824,17 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   16 Nov notebook incident), made the repo public (unlimited Actions minutes) and set the repo
   variable DEEP_RESEARCH = on, so `research-deep` runs every 3 h. First deep run started by hand.
   Rule from now on: nothing secret in the repo or its history (it is public).
+- 2026-11-27 (health check): (1) live mode's moments were all lost: pollLive starts Signals ->
+  Watcher the minute a stream's chat ends, but YouTube publishes the recording ~20-25 min later,
+  so Gemini answered 403 PERMISSION_DENIED and the video became watch_failed for good (3 streams,
+  16 chat windows, 25-26 Nov). Now 403 = `lib.gemini.NotAccessible` -> candidate status
+  `watch_wait`: its Signals windows stay pending and are retried every run until
+  `watcher.not_ready_retry_hours` (24) after they were found, then watch_failed (whole-video
+  jobs still fail at once). (2) YouTube's "Search Queries per day" limit (~100) ran out before the
+  Pacific reset, so Scout's live + finished-stream searches failed: the Gatekeeper re-searched
+  saturation every 12 h for 22 videos whose ready moments were 8-12 days old (~45 searches/day the
+  Decider can never use). Saturation searches now only for moments <= decider.max_moment_age_hours
+  (on the 27 Nov sheet: 25 -> 3 searches per refresh). 223 tests.
 - 2026-11-27 (deep runs chain): GitHub fired the 3-hourly deep cron only ~3 times/day (239 analyses
   on 26 Nov). Now each deep run that still has backlog AND Gemini budget left writes
   data/.deep_continue (gitignored) and the workflow starts the next deep run right away
