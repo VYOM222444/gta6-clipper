@@ -282,6 +282,11 @@ Automatic (since 2026-11-17 GitHub cron is only a backup; it skipped ~half the r
   5 clips per brand every day from Nov 18 (owner's choice, no ramp; optional
   `batch.clips_per_brand_by_date` changes the number from a date on).
 Owner: evening Colab render (~19:00+) + YouTube uploads; morning Colab signals (optional).
+- **Daily skill scout** (scheduled Claude task, 08:47 IST): reads Playbook `alerts.new_trick`; when a
+  viral trick we can't do yet is in the top 5, it notifies the owner (first day + every 3rd day) with
+  example links. Owner sends 2-3 examples (render notebook cell 6 saves them to Drive `_examples`, or
+  screen recordings) -> Claude builds the skill OFF -> owner tests it on real clips (cell 5
+  `TEST_SKILLS`) -> approves -> switched on (`render.edits.experiments` = 1.0).
 
 **Reliable scheduler setup (once, on the laptop, ~10 min):**
 1. GitHub > Settings > Developer settings > Fine-grained tokens > Generate: name
@@ -935,3 +940,30 @@ says so and only likes/comments are filled. Meta's numbers can lag up to 48 h.
   (Meta's docs list the last two for Facebook video insights). Not verified against the live API
   (no token yet): check the first Tracker log after the secret exists ("Instagram stats updated
   for N posts"). Experiment report still uses YouTube posts only. 243 tests.
+- 2026-11-28 (Meta setup skipped): developers.facebook.com didn't work on the owner's iPhone or laptop,
+  so the Meta app + token steps (section 10, Instagram + Facebook setup steps 3-7 and 9) are skipped for
+  now. The 5 Instagram accounts are professional and linked to their 5 Facebook Pages (steps 1-2 done).
+  META_TOKENS_JSON stays empty: `post_social` and `log_posts.meta_stats` idle ("not set up"). Posting to
+  Instagram + Facebook stays by hand, with Instagram's "share reels to Facebook" turned back ON so each
+  Reel also lands on the brand's Page. Retry steps 3-7 from another computer some day; nothing else
+  has to change.
+- 2026-11-28 (2 new skills, OFF until tested + daily skill scout): owner wants more editing skills, kept
+  up with trends daily, and every new skill tested on REAL clips before it goes live. Data (stream clips,
+  28 Nov): no unbuilt trick is used clearly more by 7-day winners; rising Shorts (72 h) use "cuts on the
+  beat" 56% vs 39% (#4 viral). Built, OFF (`render.edits.experiments` deadair / memesfx = 0.0):
+  (1) dead-air cutter `edits.dead_air` + `deadair_cmd`: a pause = loudness > 20 dB under the clip's 90th
+  percentile for >= 0.6 s; cut keeps 0.15 s each side, never the 2 s build-up before the payoff or the
+  0.5 s after it, never the clip's last pause, <= 30% of the clip, >= min_seconds left; runs on the
+  source before Whisper / payoff / reframe (`render_batch.cut_dead_air`, failure -> clip kept), tag
+  deadair<N>. (2) payoff sound `edits.payoff_sound` + `apply_payoff_sound`: ding (generated bell) for
+  tip / secret / news, boom (generated deep boom) for fails or funny beats in chaos / reaction clips
+  (hook / title / description words, Busted Again brand), replacing the impact; tags boom / ding.
+  Skill test: render notebook cell 5 `TEST_SKILLS = "deadair,memesfx"` (env CLIPPER_TEST_SKILLS) renders
+  the newest approved clips (default 3, rendered or not) twice into Drive `_skill_tests/<day>/
+  <batch_id>__base.mp4` + `__<skills>.mp4`; Batch untouched, nothing posted. On approval: experiments
+  -> 1.0, lib/skills have=True for sfx_meme_sound / sfx_ding. Skill scout: `alerts.new_trick` looks at
+  the viral top 5 (`researcher.examples.alert_top`), 2 links, `since` = first day (kept across runs);
+  Colab cell 6 downloads examples of tricks we can't do yet first; scheduled task "GTA6 daily skill
+  scout". Cuts on the beat: waiting for the owner's examples. Checked with real ffmpeg on a synthetic
+  20 s clip through run_skill_test: base 16.1 s vs 14.6 s with deadair2 (2.6 s removed) + boom on the
+  payoff. 252 tests.

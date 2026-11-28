@@ -11,6 +11,11 @@ For every Batch row with approved = yes that isn't rendered yet:
 Batch columns updated: fetch_status, render_status, output_path, rendered_at,
 template_version. Safe to re-run: finished rows are skipped, failed rows are retried.
 
+Skill test (env CLIPPER_TEST_SKILLS, e.g. "deadair,memesfx"; notebook cell 5 TEST_SKILLS): a new skill
+stays off until the owner has seen it on real clips. The newest approved clips (CLIPPER_MAX_CLIPS,
+default 3) are rendered twice, without and with the skills, into <output_dir>/_skill_tests/<day>/
+<batch_id>__base.mp4 and __<skills>.mp4. The Batch tab is not touched and nothing gets posted.
+
 Run (Colab):  from agents import render_batch; render_batch.main()
 """
 import json
@@ -226,7 +231,9 @@ def prepare_edits(cfg, work, rows=None):
     print("Edits:", ", ".join(f"{k}={'on' if v else 'off'} ({src.get(k, 'default')})" for k, v in flags.items()))
     work.mkdir(parents=True, exist_ok=True)
     ecfg["impact_path"], ecfg["whoosh_path"] = work / "sfx_impact.wav", work / "sfx_whoosh.wav"
-    for cmd in edits.sfx_cmds(ecfg["impact_path"], ecfg["whoosh_path"]):
+    ecfg["boom_path"], ecfg["ding_path"] = work / "sfx_boom.wav", work / "sfx_ding.wav"
+    for cmd in edits.sfx_cmds(ecfg["impact_path"], ecfg["whoosh_path"]) + edits.meme_sfx_cmds(
+            ecfg["boom_path"], ecfg["ding_path"]):
         subprocess.run(cmd, check=True, capture_output=True)
     ecfg["flags"] = flags
     return ecfg
@@ -264,7 +271,26 @@ def save_preview(video, ass_path, chunks, cfg, row, day):
         print(f"  note: preview not saved ({e})")
 
 
-def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
+def cut_dead_air(src, work, row, audio, payoff, ecfg, has_audio):
+    """Dead-air cutter pass on the source (before Whisper, payoff and reframe, so they all see the
+    tightened clip). Returns (new source or src, (cuts, seconds removed) or None)."""
+    keep = edits.dead_air(edits.loudness(audio), payoff, ecfg)
+    if not keep:
+        return src, None
+    tight = work / f"{row['batch_id']}.tight.mp4"
+    p = subprocess.run(edits.deadair_cmd(src, tight, keep, has_audio), capture_output=True, text=True)
+    if p.returncode != 0 or not tight.exists():
+        print(f"  note: dead-air cut failed, clip kept as it was ({p.stderr.strip()[-100:]})")
+        return src, None
+    cuts = len(keep) - 1 + (1 if keep[0][0] > 0 else 0)
+    removed = round(len(audio) / edits.SR - sum(b - a for a, b in keep), 1)
+    print(f"  {row['batch_id']}: dead air cut: {cuts} pause(s), {removed} s removed")
+    return tight, (cuts, removed)
+
+
+def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None, test=None):
+    """test = {"force": {skill: on/off}, "out": Path} -> render to that file only (skill test run:
+    nothing else is written)."""
     work = Path(cfg["work_dir"])
     work.mkdir(parents=True, exist_ok=True)
     src = work / f"{row['batch_id']}.src.mp4"
@@ -293,10 +319,23 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
     if ecfg and has_audio and ecfg.get("remove_music"):
         used = remove_music(src, work, ecfg)
     if ecfg and has_audio:
-        payoff, hits = edits.analyze(load_audio(used))
         flags = edits.experiment_flags(ecfg["flags"], row["batch_id"], ecfg.get("experiments"))
+        flags.update((test or {}).get("force") or {})
+        audio = load_audio(used)
+        payoff, hits = edits.analyze(audio)
+        cut = None
+        if flags.get("deadair"):
+            used, cut = cut_dead_air(used, work, row, audio, payoff, ecfg, has_audio)
+            if cut:
+                w, h, dur, has_audio = probe(used)
+                payoff, hits = edits.analyze(load_audio(used))
         plan = edits.plan(dur, payoff, hits, flags, ecfg)
-        plan["source_end"] = dur
+        plan["source_end"], plan["deadair"] = dur, cut
+        if flags.get("memesfx"):
+            kind = edits.payoff_sound(row)
+            edits.apply_payoff_sound(plan, kind, ecfg)
+            if plan.get("payoff_sfx"):
+                print(f"  {row['batch_id']}: payoff sound: {plan['payoff_sfx']} at {plan['payoff']} s")
     words, lang = transcriber.words(used) if has_audio else ([], "")
     words = render.mask_words(words, load_rules().get("captions", {}).get("mask_words", []))
     tpl = render.load_template(row["brand"])
@@ -343,7 +382,8 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
     edit_tags = []
     if plan:
         plan["freeze_box"] = render.freeze_box(tpl, w, h, style, bool(row.get("hook_text")))
-        cmd = edits.pass2_cmd(tmp, work / f"{row['batch_id']}.fx.mp4", plan, ecfg["impact_path"],
+        impact = ecfg.get(f"{plan['payoff_sfx']}_path") if plan.get("payoff_sfx") else None
+        cmd = edits.pass2_cmd(tmp, work / f"{row['batch_id']}.fx.mp4", plan, impact or ecfg["impact_path"],
                               ecfg["whoosh_path"], ecfg)
         if cmd:
             p2 = subprocess.run(cmd, capture_output=True, text=True)
@@ -368,6 +408,11 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
                 plan["loop"] = False
         edit_tags = edits.tags(plan, bool(ecfg.get("remove_music")) and used != src)
     edit_tags += rf_tags
+    if test:   # skill test: one file to compare, nothing else written
+        test["out"].parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(tmp), str(test["out"]))
+        print(f"  {row['batch_id']}: test render [{','.join(edit_tags) or 'plain'}] -> {test['out']}")
+        return {"render_status": "done", "output_path": str(test["out"]), "tags": edit_tags}
     save_preview(tmp, ass_path, chunks, cfg, row, day)
     shutil.move(str(tmp), str(mp4))  # Drive is a different disk: move, not rename
     txt.write_text(render.post_text(row), encoding="utf-8")
@@ -376,6 +421,41 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None):
             "rendered_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "template_version": str(tpl.get("version", "")) + ("+" + ",".join(edit_tags) if edit_tags else "")
                                 + (f"|{clip_style.tag(style)}" if style else "")}
+
+
+SKILL_TESTS = "_skill_tests"
+TESTABLE = ("deadair", "memesfx", "shake", "freeze", "loop", "zoom", "impact", "whoosh", "replay",
+            "end_after_payoff")
+
+
+def test_rows(rows, limit):
+    """Skill test: the newest approved clips, rendered already or not (newest batch first)."""
+    out = [r for r in rows if str(r.get("approved", "")).strip().lower() in YES and r.get("batch_id")]
+    out.sort(key=_batch_day, reverse=True)
+    return out[:limit]
+
+
+def run_skill_test(skills, rows, cfg, transcriber, js_runtime, ecfg, style, limit):
+    """The owner tests a new skill on REAL clips before it is switched on: every clip twice, without
+    and with the skills -> <output_dir>/_skill_tests/<day>/<batch_id>__base.mp4 and __<skills>.mp4.
+    The Batch tab is not touched and nothing gets posted. Returns the number of clips done."""
+    day = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")
+    folder, tag, done = Path(cfg["output_dir"]) / SKILL_TESTS / day, "+".join(skills), 0
+    for row in test_rows(rows, limit):
+        for name, on in (("base", False), (tag, True)):
+            test = {"force": {s: on for s in skills}, "out": folder / f"{row['batch_id']}__{name}.mp4"}
+            try:
+                res = render_one(row, cfg, transcriber, day, js_runtime, ecfg, style, test)
+            except Exception as e:  # keep going with the other clips
+                res = {"render_status": f"failed: {type(e).__name__}: {str(e)[:100]}"}
+            if res.get("blocked"):
+                print("STOPPED: YouTube's bot check. Runtime > Disconnect and delete runtime, then run again.")
+                return done
+            if res.get("render_status") != "done":
+                print(f"  {row['batch_id']} {name}: {res}")
+        done += 1
+    print(f"Skill test done: {done} clip(s), each as __base.mp4 and __{tag}.mp4 -> {folder}")
+    return done
 
 
 def main():
@@ -393,6 +473,24 @@ def main():
     except sheets.SheetSetupError as e:
         print(f"RENDER FAILED (sheet): {e}")
         return 1
+    skills = [s.strip() for s in os.environ.get("CLIPPER_TEST_SKILLS", "").split(",") if s.strip()]
+    if skills:
+        unknown = [s for s in skills if s not in TESTABLE]
+        skills = [s for s in skills if s in TESTABLE]
+        if unknown:
+            print(f"note: unknown skill(s) ignored: {', '.join(unknown)} (known: {', '.join(TESTABLE)})")
+        if not skills:
+            return 1
+        limit = int(os.environ.get("CLIPPER_MAX_CLIPS") or 0) or 3
+        print(f"SKILL TEST: {', '.join(skills)} on the {limit} newest approved clips "
+              "(Batch tab untouched, nothing posted).")
+        transcriber, playbook = Transcriber(cfg["whisper_model"]), read_playbook()
+        style = prepare_style(cfg, playbook)
+        ecfg = prepare_edits(cfg, Path(cfg["work_dir"]), playbook)
+        if not ecfg:
+            print("Edits are switched off in settings (render.edits.enabled): nothing to test.")
+            return 1
+        return 0 if run_skill_test(skills, rows, cfg, transcriber, js_runtime, ecfg, style, limit) else 1
     limit = int(os.environ.get("CLIPPER_MAX_CLIPS") or 0) or cfg["max_clips_per_run"]
     max_age = cfg.get("max_batch_age_days", 1)
     todo = to_render(rows, limit, max_age)
