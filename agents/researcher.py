@@ -46,7 +46,7 @@ from lib import examples, skills
 from lib import style as clip_style
 from lib.baselines import Baselines, breakout
 from lib.config import REPO_ROOT, load_rules, load_settings
-from lib.gemini import BudgetReached, Gemini, GeminiError, Transient, Usage
+from lib.gemini import BudgetReached, Gemini, GeminiError, NotAccessible, Transient, Usage
 from lib.schema import TABS
 from lib.youtube import QuotaExceeded, YouTube, YouTubeError
 
@@ -441,6 +441,8 @@ def _needs_tags(r):
         f = json.loads(raw)
     except ValueError:
         return True, True
+    if isinstance(f, dict) and f.get("unavailable"):
+        return False, False           # Gemini may not open it (403): don't ask again every deep run
     if not f or "error" in f:
         return True, True
     return False, "format" not in f   # newest tag: Shorts analysed before it get re-tagged
@@ -505,8 +507,10 @@ def analyze(gem, rows, now, parallel=4, max_minutes=15, clock=time.monotonic):
                 if isinstance(err, BudgetReached):
                     stop = True
                 elif not isinstance(err, Transient):
-                    updates[r["research_id"]] = {"features": json.dumps({"error": str(err)[:80]}),
-                                                 "analyzed_at": iso(now)}
+                    failed = {"error": str(err)[:80]}
+                    if isinstance(err, NotAccessible):
+                        failed["unavailable"] = True
+                    updates[r["research_id"]] = {"features": json.dumps(failed), "analyzed_at": iso(now)}
                 continue
             feats, model = res
             updates[r["research_id"]] = {"features": json.dumps(feats, ensure_ascii=False),

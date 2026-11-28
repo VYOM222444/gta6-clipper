@@ -205,3 +205,28 @@ def test_not_accessible_video_is_not_tried_on_other_models(tmp_path):
     with pytest.raises(gemini.NotAccessible):
         g.generate_json(gemini.video_parts("https://www.youtube.com/watch?v=x"), "p", {})
     assert len(calls) == 1                     # same answer from every model: don't ask twice
+
+
+def test_daily_quota_429_stops_that_model_for_the_rest_of_the_run(tmp_path):
+    calls = []
+
+    def post(url, body, key):
+        calls.append(url)
+        if "lite:" in url:
+            raise gemini.BudgetReached("Gemini quota exhausted: 429 RESOURCE_EXHAUSTED: requests per day")
+        return ok_answer({"ok": 1})
+    g = gemini.Gemini(["lite"], 350, "researcher", api_key="K", usage=usage(tmp_path), http_post=post)
+    with pytest.raises(gemini.BudgetReached):
+        g.generate_json([], "p", {})
+    assert g.remaining() == 0 and g.remaining("lite") == 0     # our counter says 349 left: Google knows better
+    with pytest.raises(gemini.BudgetReached):
+        g.generate_json([], "p", {})
+    assert len(calls) == 1 and g.usage.used("researcher") == 1  # no second request to an exhausted model
+
+    calls.clear()
+    g2 = gemini.Gemini(["lite", "flash"], 5, "watcher", api_key="K", usage=usage(tmp_path), http_post=post)
+    assert g2.generate_json([], "p", {})[1] == "flash"
+    assert g2.generate_json([], "p", {})[1] == "flash"
+    assert [u.split("/")[-1] for u in calls] == ["lite:generateContent", "flash:generateContent",
+                                                 "flash:generateContent"]
+    assert g2.remaining("lite") == 0 and g2.remaining() == 2

@@ -259,7 +259,9 @@ tests/                              # pytest; tests/fakes.py = in-memory sheet f
   (see `tests/fakes.py`). Run `python -m pytest -q`.
 - Run the code to check it works before finishing. Explain any manual step the owner must
   do (clicks in Google Cloud, sharing the sheet) in plain, numbered steps.
-- Ship via a branch + pull request; the owner merges from the GitHub app.
+- Ship via a branch + pull request; the owner merges from the GitHub app. Open every PR against
+  `main` (no PRs stacked on other PR branches: once the bottom one is merged, the others merge into
+  their old base branch and never reach main, as happened to #53, #54, #56).
 - Log API quota usage per run.
 - Keep dependencies minimal and pinned in `requirements.txt`.
 - At the end of a session, update the "Status / log" section below.
@@ -891,3 +893,19 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   pasted as-is into META_TOKENS_JSON (`tokens_from_accounts`: Page name contains the brand name ->
   token, page_id, ig_user_id), so the owner never hand-writes JSON. Every run (incl. dry run) prints
   per brand "Instagram yes/NO, Facebook yes/no" (names only, never tokens). 227 tests.
+- 2026-11-28 (health check): (1) #53 (trick fit), #54 (stream-clip formats) and #56 (Meta paste) were
+  stacked PRs (on loop-ending, trick-fit, format-groups). #52 merged loop-ending into main first, so the
+  other three merged into those branches and never reached main: no `trick_fit`, no `alerts.new_trick`
+  / `style.viral_tricks`. Merged origin/format-groups (holds all three; no conflicts). (2) The
+  Researcher's counter lost half its calls: the deep job started the next run BEFORE saving the
+  counter, and a dispatched run checks out the commit from when it was started, so every other run
+  read the old counter and its own counter commit was dropped ("skipped previously applied commit") or
+  conflicted (3 failed runs on 27 Nov). Real Flash-Lite use ~2x the counter -> Google's 500/day free
+  limit hit (27 Nov 14:01 UTC, again 23:45 and in the daily 02:02 run: 7 of 37 analysed). Fix: the next
+  deep run starts only after the counter is pushed, and every job that commits (Researcher x3,
+  Watcher, Decider, Tracker) checks out `ref: github.ref_name` (latest main). (3) `lib/gemini`: after
+  Google's daily 429 a model gets no more requests that run and counts as 0 calls left, so the deep
+  chain stops instead of starting another run. (4) Deep mode no longer re-asks Shorts Gemini may not
+  open (403 -> features `unavailable`; 2 wasted calls every run). Offline findings on the 28 Nov sheet
+  with the merged code: viral top 3 for stream clips = loop ending, end on payoff, full-screen (all
+  built; cuts on the beat #4, not built) -> no new-trick alert. 236 tests.

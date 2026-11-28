@@ -412,3 +412,73 @@ def test_skill_lists_come_from_stream_clips_only():
     assert basis.startswith("stream clips only")
     few, basis2 = researcher.skill_rows(rows[:8], settings, now)      # 2 stream winners: too few
     assert few == rows[:8] and basis2.startswith("all formats")
+
+
+def test_deep_does_not_ask_again_for_shorts_gemini_cannot_open():
+    from agents.researcher import analyze, pick_deep
+    from lib.gemini import NotAccessible
+
+    class Gem:
+        calls_this_run = 0
+
+        def remaining(self):
+            return 10
+
+        def generate_json(self, parts, *a, **k):
+            if "locked" in parts[0]["fileData"]["fileUri"]:
+                raise NotAccessible("403 PERMISSION_DENIED: The caller does not have permission")
+            return {"hook_type": "action_first", "format": "stream_clip"}, "m"
+    rows = [{"research_id": "locked", "label": "winner", "features": "", "age_days": 1},
+            {"research_id": "fine", "label": "average", "features": "", "age_days": 1}]
+    updates, _ = analyze(Gem(), rows, NOW)
+    assert json.loads(updates["locked"]["features"])["unavailable"] is True
+    for r in rows:
+        r.update(updates[r["research_id"]])
+    assert pick_deep(rows, 10) == []          # was re-asked (and counted) in every deep run
+    rows[0]["features"] = '{"error": "GeminiError: bad answer"}'
+    assert [r["research_id"] for r in pick_deep(rows, 10)] == ["locked"]   # other errors: retried
+
+
+def test_deep_chain_stops_when_google_says_daily_quota_is_used(monkeypatch, tmp_path):
+    """Google's daily 429 while our own counter still shows calls left: no next deep run."""
+    import threading
+    from lib import gemini
+    from lib.config import REPO_ROOT
+    from tests.fakes import FakeSpreadsheet
+
+    def tab(name, rows):
+        head = TABS[name]
+        return FakeWorksheet(name, [head] + [[str(r.get(h, "")) for h in head] for r in rows])
+    ts = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    research = [{"research_id": f"vid{i:08d}", "video_id": f"vid{i:08d}", "label": lab, "views": 100000,
+                 "length_s": 30, "collected_at": ts, "title": "GTA 6 funny", "age_days": 4}
+                for i, lab in enumerate(["winner"] * 10 + ["average"] * 10)]
+    ss = FakeSpreadsheet([tab("Research", research), tab("Playbook", []), tab("Examples", [])])
+    lock, served = threading.Lock(), []
+
+    def post(url, body, key):
+        with lock:
+            served.append(url)
+            if len(served) > 3:
+                raise gemini.BudgetReached("Gemini quota exhausted: 429 RESOURCE_EXHAUSTED: requests per day")
+        return ok({"hook_type": "action_first", "format": "stream_clip", "content_type": "chaos"})
+
+    def ok(obj):
+        return {"candidates": [{"content": {"parts": [{"text": json.dumps(obj)}]}}]}
+    real = gemini.Gemini
+
+    def make(models, budget, bucket, **k):
+        return real(models, budget, bucket, api_key="K", usage=gemini.Usage(tmp_path / "u.json"),
+                    http_post=post, retry_wait=None)
+    monkeypatch.setattr(sheets, "get_client", lambda: None)
+    monkeypatch.setattr(sheets, "open_sheet", lambda c, i: ss)
+    monkeypatch.setattr(researcher, "Gemini", make)
+    flag = REPO_ROOT / "data" / ".deep_continue"
+    flag.unlink(missing_ok=True)
+    try:
+        assert researcher.main(["deep"]) in (0, None)
+        done = [r for r in sheets.read_records(ss.worksheet("Research")) if r.get("model")]
+        assert len(done) == 3 and len(served) == 4     # one parallel wave, then stop
+        assert not flag.exists()                       # backlog left, counter says 346 left: still no chain
+    finally:
+        flag.unlink(missing_ok=True)

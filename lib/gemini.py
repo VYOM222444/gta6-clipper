@@ -187,6 +187,9 @@ class Gemini:
         self.usage = usage or Usage()
         self._post = http_post
         self.calls_this_run = 0
+        # models Google answered "daily quota exhausted" (429) this run: no more requests to them,
+        # and they count as 0 calls left (our own counter can be lower than Google's)
+        self._exhausted = set()
         self.retry_wait = retry_wait
         self._sleep = sleep
         self._clock = clock
@@ -203,10 +206,14 @@ class Gemini:
     def remaining(self, model=None):
         """Calls left today: for one model, or in total over the configured models."""
         if model is not None:
+            if model in self._exhausted:
+                return 0
             b, budget = self._bucket_of(model)
             return max(budget - self.usage.used(b), 0)
         seen, total = set(), 0
         for m in self.models or [None]:
+            if m in self._exhausted:
+                continue
             b, budget = self._bucket_of(m) if m else (self.bucket, self.budget)
             if b not in seen:
                 seen.add(b)
@@ -273,6 +280,10 @@ class Gemini:
             except ModelNotFound:
                 self._refund(model)
                 raise
+            except BudgetReached:  # Google's daily limit: stop sending this model requests this run
+                with self._lock:
+                    self._exhausted.add(model)
+                raise
 
     def _pace(self):
         if not self._interval:
@@ -287,6 +298,8 @@ class Gemini:
     def _take_slot(self, model=None):
         b, budget = self._bucket_of(model)
         with self._lock:
+            if model in self._exhausted:
+                raise BudgetReached(f"Google's daily Gemini quota for {model} is used up (429 earlier this run)")
             if self.usage.used(b) >= budget:
                 raise BudgetReached(f"daily Gemini budget used for {model or b} "
                                     f"({self.usage.used(b)}/{budget})")
