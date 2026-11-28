@@ -908,4 +908,7 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   chain stops instead of starting another run. (4) Deep mode no longer re-asks Shorts Gemini may not
   open (403 -> features `unavailable`; 2 wasted calls every run). Offline findings on the 28 Nov sheet
   with the merged code: viral top 3 for stream clips = loop ending, end on payoff, full-screen (all
-  built; cuts on the beat #4, not built) -> no new-trick alert. 236 tests.
+  built; cuts on the beat #4, not built) -> no new-trick alert. 236 tests. Watch item: live VOD
+  0ILzDd0o3AI got a 403 (not published yet), then 4.5 h later Gemini 400 INVALID_ARGUMENT "file or
+  media data is empty, corrupted, or malformed" -> watch_failed, its 5 chat windows lost. If it
+  recurs, treat that 400 on a fresh live VOD like the 403 (watch_wait, retry for 24 h).
