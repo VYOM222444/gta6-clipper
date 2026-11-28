@@ -15,6 +15,8 @@ Skill test (env CLIPPER_TEST_SKILLS, e.g. "deadair,memesfx"; notebook cell 5 TES
 stays off until the owner has seen it on real clips. The newest approved clips (CLIPPER_MAX_CLIPS,
 default 3) are rendered twice, without and with the skills, into <output_dir>/_skill_tests/<day>/
 <batch_id>__base.mp4 and __<skills>.mp4. The Batch tab is not touched and nothing gets posted.
+Use skills once (env CLIPPER_USE_SKILLS; notebook cell 5 USE_SKILLS): a normal render with those skills
+switched on for every clip of this run only (settings stay as they are).
 
 Run (Colab):  from agents import render_batch; render_batch.main()
 """
@@ -320,6 +322,7 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None, te
         used = remove_music(src, work, ecfg)
     if ecfg and has_audio:
         flags = edits.experiment_flags(ecfg["flags"], row["batch_id"], ecfg.get("experiments"))
+        flags.update(ecfg.get("force") or {})          # USE_SKILLS: on for this whole run
         flags.update((test or {}).get("force") or {})
         audio = load_audio(used)
         payoff, hits = edits.analyze(audio)
@@ -502,6 +505,10 @@ def main():
     playbook = read_playbook()
     style = prepare_style(cfg, playbook)
     ecfg = prepare_edits(cfg, Path(cfg["work_dir"]), playbook)
+    use = [s.strip() for s in os.environ.get("CLIPPER_USE_SKILLS", "").split(",") if s.strip()]
+    if use and ecfg:   # owner's choice for THIS render only: real clips, saved and posted as usual
+        ecfg["force"] = {s: True for s in use if s in TESTABLE}
+        print(f"Skills switched on for this render only: {', '.join(ecfg['force']) or 'none (unknown names)'}")
     day = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")
     headers = TABS[TAB]
     ok = 0
