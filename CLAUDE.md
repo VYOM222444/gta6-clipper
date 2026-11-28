@@ -286,7 +286,8 @@ Owner: evening Colab render (~19:00+) + YouTube uploads; morning Colab signals (
   viral trick we can't do yet is in the top 5, it notifies the owner (first day + every 3rd day) with
   example links. Owner sends 2-3 examples (render notebook cell 6 saves them to Drive `_examples`, or
   screen recordings) -> Claude builds the skill OFF -> owner tests it on real clips (cell 5
-  `TEST_SKILLS`) -> approves -> switched on (`render.edits.experiments` = 1.0).
+  `TEST_SKILLS`) -> approves -> switched on (`render.edits.experiments` = 1.0). To use a skill that
+  is still OFF on one evening's real clips (posted as usual): cell 5 `USE_SKILLS = "deadair,memesfx"`.
 
 **Reliable scheduler setup (once, on the laptop, ~10 min):**
 1. GitHub > Settings > Developer settings > Fine-grained tokens > Generate: name
@@ -967,3 +968,15 @@ says so and only likes/comments are filled. Meta's numbers can lag up to 48 h.
   scout". Cuts on the beat: waiting for the owner's examples. Checked with real ffmpeg on a synthetic
   20 s clip through run_skill_test: base 16.1 s vs 14.6 s with deadair2 (2.6 s removed) + boom on the
   payoff. 252 tests.
+- 2026-11-28 (use skills once + why 10 clips): owner wants the new skills on today's real batch only.
+  Render notebook cell 5 `USE_SKILLS = "deadair,memesfx"` (env CLIPPER_USE_SKILLS): a NORMAL render
+  (Batch tab updated, .mp4 + .txt saved to Drive, ready to post) with those skills switched on for every
+  clip of that run (`ecfg["force"]`, applied after the experiment flags); settings stay as they are and
+  the notebook opens with "" again next time. Names must be in render_batch.TESTABLE. template_version
+  carries the tags (deadair<N>, boom/ding), so the Analyst can compare. Checked with real ffmpeg on a
+  synthetic clip through render_one (tags 2+zoom1,impact,shake,freeze,loop,deadair2,boom). Why the
+  28 Nov batch had 10 clips (target 25): every usable moment was picked; in 48 h the Watcher found
+  moments in only 12 videos (24 moments: 21 in batches, 3 blocked by max 2 per video), because 15 of 24
+  recent long videos / stream VODs had no Signals windows (GitHub: comments + live chat only) and the
+  Watcher only watches windows (whole videos only up to 15 min); it used 4 of its 45 Gemini calls on
+  28 Nov. Supply, not the Decider, is the limit. 253 tests.

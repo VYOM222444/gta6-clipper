@@ -53,3 +53,29 @@ def test_main_skill_test_mode_leaves_the_batch_tab_alone(monkeypatch):
     monkeypatch.setenv("CLIPPER_MAX_CLIPS", "0")
     assert rb.main() == 0
     assert got == {"skills": ["deadair"], "limit": 3, "n": 1}
+
+
+def test_use_skills_switches_them_on_for_this_render_only(monkeypatch):
+    from datetime import datetime, timezone
+    from agents import render_batch as rb
+    from lib import sheets
+    from lib.schema import TABS
+    from tests.fakes import FakeSpreadsheet, FakeWorksheet
+    head = TABS["Batch"]
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    row = {"batch_id": f"{today}-01", "approved": "yes", "brand": "wasted_again"}
+    ws = FakeWorksheet("Batch", [head, [row.get(h, "") for h in head]])
+    monkeypatch.setattr(sheets, "get_client", lambda: None)
+    monkeypatch.setattr(sheets, "open_sheet", lambda c, i: FakeSpreadsheet([ws]))
+    monkeypatch.setattr(rb, "Transcriber", lambda size: None)
+    monkeypatch.setattr(rb, "read_playbook", lambda: None)
+    monkeypatch.setattr(rb, "prepare_style", lambda cfg, rows: {})
+    monkeypatch.setattr(rb, "prepare_edits", lambda cfg, work, rows=None: {"flags": {}})
+    seen = []
+    monkeypatch.setattr(rb, "render_one", lambda r, cfg, tr, day, js, ecfg, style, test=None:
+                        seen.append((r["batch_id"], dict(ecfg.get("force") or {}), test)) or {"render_status": "done"})
+    monkeypatch.delenv("CLIPPER_TEST_SKILLS", raising=False)
+    monkeypatch.setenv("CLIPPER_USE_SKILLS", "deadair,memesfx,nope")
+    assert rb.main() == 0
+    assert seen == [(f"{today}-01", {"deadair": True, "memesfx": True}, None)]   # a normal render, not a test
+    assert ws.get_all_records()[0]["render_status"] == "done"                     # Batch updated as usual
