@@ -967,3 +967,16 @@ says so and only likes/comments are filled. Meta's numbers can lag up to 48 h.
   scout". Cuts on the beat: waiting for the owner's examples. Checked with real ffmpeg on a synthetic
   20 s clip through run_skill_test: base 16.1 s vs 14.6 s with deadair2 (2.6 s removed) + boom on the
   payoff. 252 tests.
+- 2026-11-28 (reference study + dead-air v2): owner sent 9 screen recordings of viral Shorts (findings in the
+  Project doc claude/reference-shorts-2026-11-28.md; 7-9 were not stream clips). Stream clips cut every
+  ~0.8-1 s and leave no gap >= 0.3 s; loudness can't find those gaps (game sound under the voice). Skills
+  will be built one at a time (owner's order: dead-air v2 -> jump-cut zoom -> 50/50 split -> one-word
+  captions -> punchline ending -> bleep), each OFF until tested. Dead-air v2 (`edits.word_gaps` +
+  `shift_words`): with deadair on, Whisper runs FIRST on the source; gaps between words >= `deadair_gap`
+  (0.3, owner) are cut keeping `deadair_word_pad` (0.08) each side; the silence before the first word too;
+  a gap whose loudest 10% is within `deadair_game_db` (6) dB of the clip's loud level (crash, explosion) is
+  kept (owner: keep loud game moments); payoff build-up protected; max `deadair_max_share` 0.4 (owner);
+  no words -> old loudness cutter. Words are shifted onto the cut clip (Whisper runs once). Still OFF
+  (`experiments.deadair` = 0.0): test with cell 5 TEST_SKILLS = "deadair". Checked on real speech (24 s
+  -> 20.1 s, 10 gaps cut) with ffmpeg; Whisper model can't download in the chat sandbox, so the words were
+  stand-ins. 258 tests.

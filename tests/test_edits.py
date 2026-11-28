@@ -181,3 +181,53 @@ def test_boom_replaces_the_impact_and_shows_in_the_tags():
     assert "ding" in edits.tags(q) and "deadair3" in edits.tags(q)
     assert edits.apply_payoff_sound(edits.plan(14.0, None, [], {}, CFG), "boom", {}).get("payoff_sfx") is None
     assert len(edits.meme_sfx_cmds("b.wav", "d.wav")) == 2
+
+
+def words_at(spans):
+    return [{"word": f"w{i}", "start": a, "end": b} for i, (a, b) in enumerate(spans)]
+
+
+def talk_track(sec, spans, loud=()):
+    """Speech (0.3) only during the word spans, quiet (0.003) between, `loud` = game noise at 0.4."""
+    n = int(round(sec / edits.FRAME))
+    r = np.full(n, 0.003)
+    for a, b in list(spans) + list(loud):
+        r[int(round(a / edits.FRAME)):int(round(b / edits.FRAME))] = 0.4 if (a, b) in loud else 0.3
+    return r
+
+
+DA2 = {**DA, "deadair_gap": 0.3, "deadair_word_pad": 0.08, "deadair_game_db": 6, "deadair_max_share": 0.4}
+
+
+def test_word_gaps_cuts_gaps_between_words_and_the_lead_in():
+    spans = [(1.0, 1.5), (1.6, 2.0), (2.8, 3.2), (3.3, 19.5)]
+    keep = edits.word_gaps(words_at(spans), talk_track(20, spans), None, DA2)
+    assert keep[0] == (0.92, 2.08)                     # lead-in cut (pad 0.08); 0.1 s gap 1.5-1.6 kept
+    assert keep[1][0] == 2.72                          # 0.8 s gap 2.0-2.8 cut, 0.08 s kept each side
+    assert round(sum(b - a for a, b in keep), 2) == round(20 - 0.92 - 0.64, 2)
+
+
+def test_word_gaps_keeps_loud_game_moments_and_the_payoff_build_up():
+    spans = [(1.0, 5.5), (7.5, 19.5)]
+    r = talk_track(20, spans, loud=[(6.0, 7.0)])      # crash in the game while nobody talks
+    assert edits.word_gaps(words_at(spans), r, None, DA2) == [(0.92, 20.0)]   # only the lead-in goes
+    spans2 = [(0.0, 10.0), (11.0, 19.5)]               # quiet gap right before the payoff at 11.5
+    assert edits.word_gaps(words_at(spans2), talk_track(20, spans2), 11.5, DA2) == []
+
+
+def test_word_gaps_never_removes_more_than_the_share():
+    spans = [(i * 2.0, i * 2.0 + 0.6) for i in range(15)]   # 1.4 s gaps: 70% silence
+    keep = edits.word_gaps(words_at(spans), talk_track(30, spans), None, DA2)
+    assert 30 - sum(b - a for a, b in keep) <= 0.4 * 30 + 0.01
+
+
+def test_word_gaps_without_speech_falls_back_to_loudness():
+    r = rms_track(30, [(5, 7), (12, 15)])
+    assert edits.word_gaps([], r, 20.0, DA2) == edits.dead_air(r, 20.0, DA2)
+
+
+def test_shift_words_moves_words_onto_the_cut_clip():
+    w = words_at([(1.0, 1.5), (2.0, 2.4), (5.0, 5.5)])
+    out = edits.shift_words(w, [(0.9, 1.6), (4.9, 6.0)])
+    assert [x["word"] for x in out] == ["w0", "w2"]      # w1 was in the removed part
+    assert out[0]["start"] == 0.1 and out[1]["start"] == 0.8

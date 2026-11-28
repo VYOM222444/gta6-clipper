@@ -200,7 +200,10 @@
       "deadair_min_gap": 0.6,
       "deadair_pad": 0.15,
       "deadair_protect": 2.0,
-      "deadair_max_share": 0.3,
+      "deadair_max_share": 0.4,
+      "deadair_gap": 0.3,
+      "deadair_word_pad": 0.08,
+      "deadair_game_db": 6,
       "boom_volume": 0.9,
       "ding_volume": 0.6
     },

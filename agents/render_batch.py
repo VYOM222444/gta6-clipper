@@ -271,21 +271,22 @@ def save_preview(video, ass_path, chunks, cfg, row, day):
         print(f"  note: preview not saved ({e})")
 
 
-def cut_dead_air(src, work, row, audio, payoff, ecfg, has_audio):
-    """Dead-air cutter pass on the source (before Whisper, payoff and reframe, so they all see the
-    tightened clip). Returns (new source or src, (cuts, seconds removed) or None)."""
-    keep = edits.dead_air(edits.loudness(audio), payoff, ecfg)
+def cut_dead_air(src, work, row, audio, payoff, ecfg, has_audio, words=None):
+    """Dead-air cutter pass on the source (before payoff and reframe, so they see the tightened clip).
+    v2: cuts the gaps between Whisper `words` (edits.word_gaps); the words are shifted onto the cut
+    clip, so Whisper runs once. Returns (new source or src, (cuts, seconds removed) or None, words)."""
+    keep = edits.word_gaps(words, edits.loudness(audio), payoff, ecfg)
     if not keep:
-        return src, None
+        return src, None, words
     tight = work / f"{row['batch_id']}.tight.mp4"
     p = subprocess.run(edits.deadair_cmd(src, tight, keep, has_audio), capture_output=True, text=True)
     if p.returncode != 0 or not tight.exists():
         print(f"  note: dead-air cut failed, clip kept as it was ({p.stderr.strip()[-100:]})")
-        return src, None
+        return src, None, words
     cuts = len(keep) - 1 + (1 if keep[0][0] > 0 else 0)
     removed = round(len(audio) / edits.SR - sum(b - a for a, b in keep), 1)
-    print(f"  {row['batch_id']}: dead air cut: {cuts} pause(s), {removed} s removed")
-    return tight, (cuts, removed)
+    print(f"  {row['batch_id']}: dead air cut: {cuts} gap(s), {removed} s removed")
+    return tight, (cuts, removed), edits.shift_words(words or [], keep)
 
 
 def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None, test=None):
@@ -315,7 +316,7 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None, te
                 print(f"  {row['batch_id']}: no video in download; formats listed with video: {len(vids)}")
                 print("   " + ((lf.stderr or lf.stdout).strip().splitlines() or ["(no output)"])[-1][:200])
                 return {"fetch_status": f"failed: bad download ({e})"[:140]}
-    plan, used = None, src
+    plan, used, words, lang = None, src, None, ""
     if ecfg and has_audio and ecfg.get("remove_music"):
         used = remove_music(src, work, ecfg)
     if ecfg and has_audio:
@@ -325,7 +326,8 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None, te
         payoff, hits = edits.analyze(audio)
         cut = None
         if flags.get("deadair"):
-            used, cut = cut_dead_air(used, work, row, audio, payoff, ecfg, has_audio)
+            words, lang = transcriber.words(used)
+            used, cut, words = cut_dead_air(used, work, row, audio, payoff, ecfg, has_audio, words)
             if cut:
                 w, h, dur, has_audio = probe(used)
                 payoff, hits = edits.analyze(load_audio(used))
@@ -336,7 +338,8 @@ def render_one(row, cfg, transcriber, day, js_runtime, ecfg=None, style=None, te
             edits.apply_payoff_sound(plan, kind, ecfg)
             if plan.get("payoff_sfx"):
                 print(f"  {row['batch_id']}: payoff sound: {plan['payoff_sfx']} at {plan['payoff']} s")
-    words, lang = transcriber.words(used) if has_audio else ([], "")
+    if words is None:
+        words, lang = transcriber.words(used) if has_audio else ([], "")
     words = render.mask_words(words, load_rules().get("captions", {}).get("mask_words", []))
     tpl = render.load_template(row["brand"])
     if style and style.get("layout"):

@@ -200,6 +200,70 @@ def dead_air(rms, payoff=None, cfg=None, frame=FRAME):
     return keep
 
 
+def word_gaps(words, rms, payoff=None, cfg=None, frame=FRAME):
+    """Dead-air cutter v2 (28 Nov, from 6 reference stream clips: a cut every ~0.8-1 s, no gap >= 0.3 s
+    left): cut the gaps between Whisper words that are >= `deadair_gap` s, keeping `deadair_word_pad` s
+    on each side. A gap where the GAME is loud (its loudest 10% within `deadair_game_db` dB of the clip's
+    loud level: crash, explosion) is kept. The silence before the first word is cut too; the gap after
+    the last word is left alone (end cut / loop). Same payoff protection, budget (`deadair_max_share`)
+    and min_seconds as dead_air(). No words (no speech) -> loudness dead_air(). -> [(start, end)] to
+    KEEP, or [] = nothing worth cutting."""
+    import numpy as np
+    cfg = cfg or {}
+    words = [w for w in (words or []) if w.get("end", 0) > w.get("start", 0)]
+    if len(words) < 2:
+        return dead_air(rms, payoff, cfg, frame)
+    db = 20 * np.log10(np.maximum(np.asarray(rms, dtype="float64"), 1e-6))
+    dur = len(db) * frame
+    loud = float(np.percentile(db, 90))
+    gap_min, pad = cfg.get("deadair_gap", 0.3), cfg.get("deadair_word_pad", 0.08)
+    zone = (payoff - cfg.get("deadair_protect", 2.0), payoff + 0.5) if payoff is not None else None
+    gaps = [(0.0, words[0]["start"], True)] + [(a["end"], b["start"], False) for a, b in zip(words, words[1:])]
+    cuts = []
+    for a, b, first in gaps:
+        if b - a < gap_min:
+            continue
+        seg = db[int(a / frame):max(int(b / frame), int(a / frame) + 1)]
+        if seg.size and float(np.percentile(seg, 90)) > loud - cfg.get("deadair_game_db", 6):
+            continue                                       # loud game moment: keep it
+        a, b = (0.0 if first else a + pad), b - pad
+        parts = [(a, b)]
+        if zone and a < zone[1] and b > zone[0]:
+            parts = [(a, min(b, zone[0])), (max(a, zone[1]), b)]
+        cuts += [(round(x, 2), round(y, 2)) for x, y in parts if y - x >= 0.1]
+    budget, total, chosen = cfg.get("deadair_max_share", 0.4) * dur, 0.0, []
+    for a, b in sorted(cuts, key=lambda c: c[0] - c[1]):              # longest gaps first
+        if total + (b - a) <= budget and dur - total - (b - a) >= cfg.get("min_seconds", 8):
+            chosen.append((a, b))
+            total += b - a
+    if not chosen:
+        return []
+    keep, t = [], 0.0
+    for a, b in sorted(chosen):
+        if a - t >= 0.05:
+            keep.append((round(t, 2), round(a, 2)))
+        t = b
+    if dur - t >= 0.05:
+        keep.append((round(t, 2), round(dur, 2)))
+    return keep
+
+
+def shift_words(words, keep):
+    """Move Whisper word times onto the cut clip (no second Whisper run). A word whose middle falls in
+    a removed part is dropped; times are clamped into the kept part they belong to."""
+    out, offs, t = [], [], 0.0
+    for a, b in keep:
+        offs.append((a, b, t - a))
+        t += b - a
+    for w in words:
+        mid = (w["start"] + w["end"]) / 2
+        part = next((p for p in offs if p[0] <= mid < p[1]), None)
+        if part:
+            a, b, d = part
+            out.append({**w, "start": round(max(w["start"], a) + d, 3), "end": round(min(w["end"], b) + d, 3)})
+    return out
+
+
 def deadair_cmd(src, dst, keep, has_audio=True, fade=0.015):
     """Jump-cut the source down to the `keep` parts (basic filters only: split, trim, concat; old
     ffmpeg safe). Every part's sound gets a 15 ms fade in/out so the cuts never click."""
