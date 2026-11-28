@@ -259,7 +259,9 @@ tests/                              # pytest; tests/fakes.py = in-memory sheet f
   (see `tests/fakes.py`). Run `python -m pytest -q`.
 - Run the code to check it works before finishing. Explain any manual step the owner must
   do (clicks in Google Cloud, sharing the sheet) in plain, numbered steps.
-- Ship via a branch + pull request; the owner merges from the GitHub app.
+- Ship via a branch + pull request; the owner merges from the GitHub app. Open every PR against
+  `main` (no PRs stacked on other PR branches: once the bottom one is merged, the others merge into
+  their old base branch and never reach main, as happened to #53, #54, #56).
 - Log API quota usage per run.
 - Keep dependencies minimal and pinned in `requirements.txt`.
 - At the end of a session, update the "Status / log" section below.
@@ -330,9 +332,11 @@ hand; normally `agents/decider.py` does this automatically):**
 5. Access Token Debugger: paste the token > "Extend Access Token" (long-lived).
 6. Back in Explorer with that token: GET `me/accounts?fields=name,id,access_token,instagram_business_account`.
    Each Page's access_token does not expire.
-7. GitHub > Settings > Secrets > Actions > New secret `META_TOKENS_JSON`:
-   `{"wasted_again": {"ig_user_id": "<instagram_business_account id>", "page_id": "<Page id>", "token": "<Page access_token>"}, ...}`
-   for all 5 brands. Never paste tokens in chat.
+7. GitHub > Settings > Secrets > Actions > New secret `META_TOKENS_JSON`: paste Meta's whole
+   answer from step 6 as-is (from the first { to the last }); Pages are matched to brands by name
+   (Page name must contain the brand name, e.g. "Wasted Again Clips"). The hand-written form
+   `{"wasted_again": {"ig_user_id": ..., "page_id": ..., "token": ...}, ...}` still works. Never
+   paste tokens in chat.
 8. Google Drive: share the "GTA6 Clipper" folder with the service account email as Viewer.
 9. Actions > Social post > Run workflow with "dry run" ticked: the log lists what would post.
 
@@ -864,3 +868,47 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   1.08x with a 0.07 s white flash, while the sound plays on (timeline unchanged; shake moved right
   after the freeze); old behaviour = `freeze_style: hold`. Verified on the Techno Gamerz crash clip
   through render_one. 222 tests.
+- 2026-11-27 (best moments, fitted to the viral tricks): owner: pick the BEST moments and fit them into
+  the most viral editing style. Researcher findings now write Playbook `style.viral_tricks` (top 3
+  viral-right-now tricks the Renderer CAN do, `researcher.examples.fit_tricks`) and `alerts.new_trick`
+  (a trick in the viral top 3 we can't do yet + 3 example links; the daily health check tells the
+  owner to screen-record one so the skill gets built the same day). Watcher prompt lists those tricks
+  with what a moment needs for each (`lib/skills.FIT_NEEDS`) and Gemini returns `trick_fit` 1-10 +
+  `fit_note` (new Moments columns, at the end); `quality` must stay about the moment itself. Decider:
+  score += `decider.trick_fit_weight` (0.1) x (trick_fit - 5): a small bonus, so a better moment
+  always beats a better-fitting one. The Renderer already applies every built trick on every clip
+  (Playbook-driven edits + skills at 1.0). 225 tests.
+- 2026-11-27 (stream clips vs other Shorts): owner: an editing style that works for stream clips may
+  not work for other Shorts, so categorise first. Researcher's Gemini tags now include `format`
+  (`lib/formats.py`: stream_clip, gameplay_clip, comparison, edit_montage, skit_irl, news_talk,
+  other); `formats.group_of` -> "stream" (stream_clip) or "other"; rows tagged before `format` existed:
+  facecam / split-screen facecam = stream. `researcher.skill_rows` keeps only the group in
+  `settings.researcher.skill_group` ("stream") for everything that builds or chooses editing skills:
+  style.*, clip length, story shape, gap report, viral tricks, Examples tab, style.viral_tricks (Watcher);
+  falls back to all formats while that group has < min_group winners (log: "Editing skills judged
+  on: ..."). Research findings (DO/AVOID) stay on all Shorts, plus a `format` comparison. Deep mode
+  re-tags every Short missing `format` (winners first), so the backfill takes a few days of the
+  350/day budget. Examples `style` starts with the format. 226 tests.
+- 2026-11-27 (Meta setup made easier): `post_social.load_tokens` also accepts Meta's me/accounts answer
+  pasted as-is into META_TOKENS_JSON (`tokens_from_accounts`: Page name contains the brand name ->
+  token, page_id, ig_user_id), so the owner never hand-writes JSON. Every run (incl. dry run) prints
+  per brand "Instagram yes/NO, Facebook yes/no" (names only, never tokens). 227 tests.
+- 2026-11-28 (health check): (1) #53 (trick fit), #54 (stream-clip formats) and #56 (Meta paste) were
+  stacked PRs (on loop-ending, trick-fit, format-groups). #52 merged loop-ending into main first, so the
+  other three merged into those branches and never reached main: no `trick_fit`, no `alerts.new_trick`
+  / `style.viral_tricks`. Merged origin/format-groups (holds all three; no conflicts). (2) The
+  Researcher's counter lost half its calls: the deep job started the next run BEFORE saving the
+  counter, and a dispatched run checks out the commit from when it was started, so every other run
+  read the old counter and its own counter commit was dropped ("skipped previously applied commit") or
+  conflicted (3 failed runs on 27 Nov). Real Flash-Lite use ~2x the counter -> Google's 500/day free
+  limit hit (27 Nov 14:01 UTC, again 23:45 and in the daily 02:02 run: 7 of 37 analysed). Fix: the next
+  deep run starts only after the counter is pushed, and every job that commits (Researcher x3,
+  Watcher, Decider, Tracker) checks out `ref: github.ref_name` (latest main). (3) `lib/gemini`: after
+  Google's daily 429 a model gets no more requests that run and counts as 0 calls left, so the deep
+  chain stops instead of starting another run. (4) Deep mode no longer re-asks Shorts Gemini may not
+  open (403 -> features `unavailable`; 2 wasted calls every run). Offline findings on the 28 Nov sheet
+  with the merged code: viral top 3 for stream clips = loop ending, end on payoff, full-screen (all
+  built; cuts on the beat #4, not built) -> no new-trick alert. 236 tests. Watch item: live VOD
+  0ILzDd0o3AI got a 403 (not published yet), then 4.5 h later Gemini 400 INVALID_ARGUMENT "file or
+  media data is empty, corrupted, or malformed" -> watch_failed, its 5 chat windows lost. If it
+  recurs, treat that 400 on a fresh live VOD like the 403 (watch_wait, retry for 24 h).

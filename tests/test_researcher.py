@@ -289,8 +289,8 @@ def test_baseline_refresh_excludes_the_short_itself():
 def test_pick_deep_order_and_backfill():
     import json as _j
     from agents.researcher import pick_deep
-    old = _j.dumps({"hook_type": "action_first"})              # analysed before story tags existed
-    new = _j.dumps({"hook_type": "action_first", "opening_type": "payoff_first"})
+    old = _j.dumps({"hook_type": "action_first", "opening_type": "payoff_first"})   # before `format` existed
+    new = _j.dumps({"hook_type": "action_first", "opening_type": "payoff_first", "format": "stream_clip"})
     rows = [{"research_id": "w_new", "label": "winner", "features": "", "age_days": 5},
             {"research_id": "w_old", "label": "winner", "features": old, "age_days": 4},
             {"research_id": "w_done", "label": "winner", "features": new, "age_days": 3},
@@ -363,6 +363,7 @@ def test_main_deep_mode_end_to_end(monkeypatch, tmp_path, small_batch=None):
     assert all("opening_type" in _j.loads(r["features"]) for r in rows)
     play = {r["rule_id"]: r for r in sheets.read_records(ss.worksheet("Playbook"))}
     assert "START: payoff first" in play["style.structure"]["rule"]
+    assert "style.viral_tricks" in play and "alerts.new_trick" in play
     # everything analysed -> no follow-up run requested
     from lib.config import REPO_ROOT
     assert not (REPO_ROOT / "data" / ".deep_continue").exists()
@@ -386,3 +387,98 @@ def test_deep_mode_asks_for_next_run_when_backlog_left(monkeypatch, tmp_path):
         pass  # the shared helper asserts 20 calls; here only 5 happen
     assert flag.exists()
     flag.unlink()
+
+
+def test_skill_lists_come_from_stream_clips_only():
+    from datetime import datetime, timezone
+    from agents import researcher
+    from lib import formats
+    from lib.config import load_settings
+    assert formats.group_of({"format": "stream_clip"}) == "stream"
+    assert formats.group_of({"format": "skit_irl", "facecam": True}) == "other"   # the tag wins
+    assert formats.group_of({"facecam": True}) == "stream"                        # old rows: guess
+    assert formats.group_of({"layout": "full_vertical"}) == "other"
+    now = datetime(2026, 11, 27, 12, tzinfo=timezone.utc)
+    t = "2026-11-27T06:00:00Z"
+    settings = load_settings()
+
+    def row(i, label, fmt):
+        return {"research_id": f"{fmt}{label}{i}", "label": label, "analyzed_at": t, "collected_at": t,
+                "features": json.dumps({"format": fmt, "emoji_or_stickers": fmt == "skit_irl"})}
+    rows = [row(i, lab, fmt) for i in range(10) for lab in ("winner", "average")
+            for fmt in ("stream_clip", "skit_irl")]
+    sub, basis = researcher.skill_rows(rows, settings, now)
+    assert len(sub) == 20 and all("stream_clip" in r["research_id"] for r in sub)
+    assert basis.startswith("stream clips only")
+    few, basis2 = researcher.skill_rows(rows[:8], settings, now)      # 2 stream winners: too few
+    assert few == rows[:8] and basis2.startswith("all formats")
+
+
+def test_deep_does_not_ask_again_for_shorts_gemini_cannot_open():
+    from agents.researcher import analyze, pick_deep
+    from lib.gemini import NotAccessible
+
+    class Gem:
+        calls_this_run = 0
+
+        def remaining(self):
+            return 10
+
+        def generate_json(self, parts, *a, **k):
+            if "locked" in parts[0]["fileData"]["fileUri"]:
+                raise NotAccessible("403 PERMISSION_DENIED: The caller does not have permission")
+            return {"hook_type": "action_first", "format": "stream_clip"}, "m"
+    rows = [{"research_id": "locked", "label": "winner", "features": "", "age_days": 1},
+            {"research_id": "fine", "label": "average", "features": "", "age_days": 1}]
+    updates, _ = analyze(Gem(), rows, NOW)
+    assert json.loads(updates["locked"]["features"])["unavailable"] is True
+    for r in rows:
+        r.update(updates[r["research_id"]])
+    assert pick_deep(rows, 10) == []          # was re-asked (and counted) in every deep run
+    rows[0]["features"] = '{"error": "GeminiError: bad answer"}'
+    assert [r["research_id"] for r in pick_deep(rows, 10)] == ["locked"]   # other errors: retried
+
+
+def test_deep_chain_stops_when_google_says_daily_quota_is_used(monkeypatch, tmp_path):
+    """Google's daily 429 while our own counter still shows calls left: no next deep run."""
+    import threading
+    from lib import gemini
+    from lib.config import REPO_ROOT
+    from tests.fakes import FakeSpreadsheet
+
+    def tab(name, rows):
+        head = TABS[name]
+        return FakeWorksheet(name, [head] + [[str(r.get(h, "")) for h in head] for r in rows])
+    ts = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    research = [{"research_id": f"vid{i:08d}", "video_id": f"vid{i:08d}", "label": lab, "views": 100000,
+                 "length_s": 30, "collected_at": ts, "title": "GTA 6 funny", "age_days": 4}
+                for i, lab in enumerate(["winner"] * 10 + ["average"] * 10)]
+    ss = FakeSpreadsheet([tab("Research", research), tab("Playbook", []), tab("Examples", [])])
+    lock, served = threading.Lock(), []
+
+    def post(url, body, key):
+        with lock:
+            served.append(url)
+            if len(served) > 3:
+                raise gemini.BudgetReached("Gemini quota exhausted: 429 RESOURCE_EXHAUSTED: requests per day")
+        return ok({"hook_type": "action_first", "format": "stream_clip", "content_type": "chaos"})
+
+    def ok(obj):
+        return {"candidates": [{"content": {"parts": [{"text": json.dumps(obj)}]}}]}
+    real = gemini.Gemini
+
+    def make(models, budget, bucket, **k):
+        return real(models, budget, bucket, api_key="K", usage=gemini.Usage(tmp_path / "u.json"),
+                    http_post=post, retry_wait=None)
+    monkeypatch.setattr(sheets, "get_client", lambda: None)
+    monkeypatch.setattr(sheets, "open_sheet", lambda c, i: ss)
+    monkeypatch.setattr(researcher, "Gemini", make)
+    flag = REPO_ROOT / "data" / ".deep_continue"
+    flag.unlink(missing_ok=True)
+    try:
+        assert researcher.main(["deep"]) in (0, None)
+        done = [r for r in sheets.read_records(ss.worksheet("Research")) if r.get("model")]
+        assert len(done) == 3 and len(served) == 4     # one parallel wave, then stop
+        assert not flag.exists()                       # backlog left, counter says 346 left: still no chain
+    finally:
+        flag.unlink(missing_ok=True)

@@ -38,6 +38,43 @@ SKILLS = {
     "cuts_on_beat": ("cuts on the beat", lambda f: f.get("cuts_on_beat") is True, False),
     "voiceover": ("voiceover narration", lambda f: f.get("voiceover") is True, False),
 }
+# What a raw moment needs so a trick works well on it. The Watcher is told the top viral tricks
+# (Playbook style.viral_tricks) with these needs and rates each moment's `trick_fit` 1-10.
+FIT_NEEDS = {
+    "zoom_ins": "sudden hits or big moments to punch in on",
+    "sfx_impact": "one sharp hit (crash, explosion, fall, punch) for an impact sound",
+    "sfx_whoosh": "fast movement or a quick change of scene",
+    "replay_of_moment": "a fast payoff that is worth seeing again in slow motion",
+    "ends_right_after_payoff": "one clear payoff the clip can end on right away",
+    "has_title_label": "a moment that can be named in 2-5 words",
+    "text_hook": "a moment that can be teased in a few words before it happens",
+    "captions": "clear speech (streamer talking or yelling)",
+    "caption_keyword_color": "clear speech with one key word to highlight",
+    "layout_blur": "action that needs the whole wide frame",
+    "layout_fill": "action that stays near the centre of the screen",
+    "layout_black": "action that needs the whole wide frame",
+    "screen_shake": "one violent hit (crash, explosion, big fall) to shake the screen on",
+    "freeze_frame": "one peak instant worth freezing (mid-air, impact, shocked face)",
+    "split_screen_facecam": "a visible facecam with a big reaction (scream, laugh, shock)",
+    "slow_motion": "a short spectacular action worth slowing down",
+    "emoji_or_stickers": "clear emotions or funny beats to pop an emoji on",
+    "loop_ending": "an ending that looks like the opening (same place, same action), so the replay feels seamless",
+    "sfx_riser": "tension building up before the payoff",
+    "sfx_record_scratch": "a sudden 'wait, what?' stop",
+    "sfx_meme_sound": "a fail or awkward beat that fits a meme sound",
+    "sfx_ding": "a clever or perfect move",
+    "fast_cuts": "many short beats in a row",
+    "cuts_on_beat": "many short beats in a row",
+    "voiceover": "something that needs explaining (a secret, tip or news)",
+}
+
+
+def fit_line(tricks):
+    """'1. screen shake (needs ...); 2. ...' for the Watcher prompt; '' when no tricks."""
+    return "\n".join(f"{i}. {t['name']}: needs {FIT_NEEDS.get(t['key'], 'a moment it suits')}"
+                     for i, t in enumerate(tricks or [], start=1))
+
+
 # never built on purpose (our rules): music is added inside the apps
 OUT_OF_SCOPE = {"background_music": ("background music (added in the apps)", lambda f: f.get("background_music") is True)}
 
