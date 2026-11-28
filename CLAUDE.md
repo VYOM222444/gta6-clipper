@@ -940,6 +940,13 @@ says so and only likes/comments are filled. Meta's numbers can lag up to 48 h.
   (Meta's docs list the last two for Facebook video insights). Not verified against the live API
   (no token yet): check the first Tracker log after the secret exists ("Instagram stats updated
   for N posts"). Experiment report still uses YouTube posts only. 243 tests.
+- 2026-11-28 (Meta setup skipped): developers.facebook.com didn't work on the owner's iPhone or laptop,
+  so the Meta app + token steps (section 10, Instagram + Facebook setup steps 3-7 and 9) are skipped for
+  now. The 5 Instagram accounts are professional and linked to their 5 Facebook Pages (steps 1-2 done).
+  META_TOKENS_JSON stays empty: `post_social` and `log_posts.meta_stats` idle ("not set up"). Posting to
+  Instagram + Facebook stays by hand, with Instagram's "share reels to Facebook" turned back ON so each
+  Reel also lands on the brand's Page. Retry steps 3-7 from another computer some day; nothing else
+  has to change.
 - 2026-11-28 (2 new skills, OFF until tested + daily skill scout): owner wants more editing skills, kept
   up with trends daily, and every new skill tested on REAL clips before it goes live. Data (stream clips,
   28 Nov): no unbuilt trick is used clearly more by 7-day winners; rising Shorts (72 h) use "cuts on the
