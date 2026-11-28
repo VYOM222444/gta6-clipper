@@ -36,6 +36,7 @@ jobs:
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          META_TOKENS_JSON: ${{ secrets.META_TOKENS_JSON }}   # Instagram + Facebook numbers
         run: python -m agents.log_posts stats
       - name: Save snapshots to repo
         run: |
