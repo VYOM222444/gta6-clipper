@@ -200,7 +200,7 @@ agents/decider.py           # automatic evening batch -> Batch tab + batches/<da
 .github/workflows/decider.yml       # scheduler ~18:00 IST + backup cron 12:53 UTC; guard; commits batch [D]
 data/gemini_usage_decider.json      # Decider's own Gemini counter                         [D]
 batches/<date>.json         # Decider output, pushed on branch batch/<date>               [B2]
-agents/log_posts.py         # posts/<date>.json -> Posted tab; YouTube stats of our posts  [P]
+agents/log_posts.py         # posts/<date>.json -> Posted tab; YouTube + Instagram + Facebook stats of our posts [P, IG]
 posts/<date>.json           # links the owner posted, pushed on branch posts/<date>       [P]
 lib/keywords.py             # trending phrases from Scout titles -> Keywords tab (Scout run) [L]
 agents/gatekeeper.py        # leaks, blocklist, used, duplicates, saturation -> Moments gate_status [G]
@@ -328,7 +328,9 @@ hand; normally `agents/decider.py` does this automatically):**
    only post to our own accounts).
 4. Graph API Explorer: pick the app, "Get User Access Token" with pages_show_list,
    pages_read_engagement, pages_manage_posts, publish_video, instagram_basic,
-   instagram_content_publish, business_management; tick all 5 Pages + Instagram accounts.
+   instagram_content_publish, business_management + (for our own views in the Posted tab)
+   instagram_manage_insights, read_insights, pages_manage_engagement; tick all 5 Pages +
+   Instagram accounts. (Whole setup works on an iPhone: Safari > aA > Request Desktop Website.)
 5. Access Token Debugger: paste the token > "Extend Access Token" (long-lived).
 6. Back in Explorer with that token: GET `me/accounts?fields=name,id,access_token,instagram_business_account`.
    Each Page's access_token does not expire.
@@ -348,7 +350,11 @@ need pasting. **When the owner pastes post links:** write `posts/<YYYY-MM-DD>.js
 params), commit on branch `posts/<YYYY-MM-DD>` from main, push. The Log posts workflow
 fills the Posted tab; the Tracker workflow refreshes YouTube views of our posts every
 6 h; checkpoints views_6h / 12h / 24h / 48h / 7d are frozen automatically (interpolated
-between 6-hourly readings). Instagram numbers: no free API until the Meta app (PR 6).
+between 6-hourly readings). Instagram + Facebook numbers come from the Meta API with the same
+brand tokens (`log_posts.meta_stats`, same 6-hourly run): views / likes / comments / checkpoints
+plus reach_now, shares_now, saves_now, avg_watch_s (watch time, seconds); hand-pasted Instagram
+links are found by shortcode. Needs the 3 insight permissions in step 4; without them the log
+says so and only likes/comments are filled. Meta's numbers can lag up to 48 h.
 
 ## 11. Status / log
 
@@ -912,3 +918,20 @@ between 6-hourly readings). Instagram numbers: no free API until the Meta app (P
   0ILzDd0o3AI got a 403 (not published yet), then 4.5 h later Gemini 400 INVALID_ARGUMENT "file or
   media data is empty, corrupted, or malformed" -> watch_failed, its 5 chat windows lost. If it
   recurs, treat that 400 on a fresh live VOD like the 403 (watch_wait, retry for 24 h).
+- 2026-11-28 (Instagram + Facebook numbers): owner set up the 5 professional Instagram accounts and 5
+  Facebook Pages on his iPhone and asked for our IG/FB views in the Posted tab. `log_posts.meta_stats`
+  (inside `log_posts stats`, i.e. every Tracker run, + `all`): per brand token from META_TOKENS_JSON,
+  Instagram Reels: media fields like_count/comments_count/timestamp + insights views, reach, saved,
+  shares, ig_reels_avg_watch_time; Facebook Page Reels: created_time + comments/likes summaries +
+  video_insights fb_reels_total_plays (fallback blue_reels_play_count), post_impressions_unique,
+  post_video_avg_time_watched, post_video_social_actions (shares = that - comments), reactions. Same
+  views_now / checkpoint logic as YouTube (`numbers_update`, shared); new Posted columns reach_now,
+  shares_now, saves_now, avg_watch_s. Meta renames metrics: metric sets in order of preference
+  (IG_SETS / FB_SETS), an "invalid metric" answer drops to the next set for the rest of the run;
+  missing insight permission -> likes/comments only + a hint in the log; rate limit -> that brand
+  next run; tokens never printed. Posts younger than `posts.meta_stats_days` (8) + one catch-up
+  reading of older ones; hand-pasted IG links resolved by shortcode via `<ig_user_id>/media`.
+  Token permissions now also instagram_manage_insights, read_insights, pages_manage_engagement
+  (Meta's docs list the last two for Facebook video insights). Not verified against the live API
+  (no token yet): check the first Tracker log after the secret exists ("Instagram stats updated
+  for N posts"). Experiment report still uses YouTube posts only. 243 tests.

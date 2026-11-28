@@ -351,7 +351,8 @@
   "posts": {
     "auto_discover": true,
     "uploads_per_channel": 50,
-    "match_min": 0.75
+    "match_min": 0.75,
+    "meta_stats_days": 8
   },
   "social": {
     "enabled": true,

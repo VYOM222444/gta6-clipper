@@ -45,6 +45,7 @@ TABS = {
         "views_24h", "views_7d", "likes_7d", "comments_7d", "final_label",
         "platform_id", "views_now", "likes_now", "comments_now", "stats_at",
         "views_6h", "views_12h", "views_48h",
+        "reach_now", "shares_now", "saves_now", "avg_watch_s",   # Instagram / Facebook only
     ],
     # Trending words/phrases in fast-growing GTA 6 titles (Scout, every run).
     "Keywords": [
