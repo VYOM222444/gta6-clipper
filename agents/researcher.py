@@ -41,7 +41,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 from agents.scout import parse_iso_duration, title_ok
-from lib import keywords, sheets
+from lib import formats, keywords, sheets
 from lib import examples, skills
 from lib import style as clip_style
 from lib.baselines import Baselines, breakout
@@ -110,6 +110,7 @@ SCHEMA = {
         "dead_air_seconds": {"type": "NUMBER"},
         "ending_type": {"type": "STRING", "enum": ENDINGS},
         "story": {"type": "STRING"},
+        "format": {"type": "STRING", "enum": formats.FORMATS},
     },
     "required": ["hook_type", "text_on_screen_first_second", "payoff_second", "caption_style",
                  "layout", "facecam", "zoom_ins", "cuts", "sound_effects", "background_music",
@@ -157,7 +158,8 @@ STORY STRUCTURE (how it starts, goes through the middle, and ends):
 - ending_type: cut_on_payoff (ends on the payoff), reaction_after_payoff (a reaction follows),
   punchline_text (text joke at the end), loop_back (flows back to the start), cliffhanger,
   replay_of_payoff, call_to_action (follow/subscribe), fade_out.
-- story: one line "start -> middle -> end", e.g. "cops spot him -> 3 near misses -> bike flips onto roof"."""
+- story: one line "start -> middle -> end", e.g. "cops spot him -> 3 near misses -> bike flips onto roof".
+""" + formats.PROMPT_LINE
 
 
 def _f(x, d=0.0):
@@ -441,7 +443,7 @@ def _needs_tags(r):
         return True, True
     if not f or "error" in f:
         return True, True
-    return False, "opening_type" not in f
+    return False, "format" not in f   # newest tag: Shorts analysed before it get re-tagged
 
 
 def pick_deep(rows, n):
@@ -523,11 +525,11 @@ BOOL_FEATURES = ["text_on_screen_first_second", "has_title_label", "caption_keyw
 NUM_FEATURES = ["payoff_second", "zoom_ins", "cuts", "length_s", "payoff_pct", "setup_seconds", "beats",
                 "dead_air_seconds"]
 ENUM_FEATURES = ["hook_text_kind", "hook_type", "caption_style", "caption_position", "layout", "pace", "content_type",
-                 "music_type", "opening_type", "middle_type", "ending_type"]
+                 "music_type", "opening_type", "middle_type", "ending_type", "format"]
 SECTION = {"hook_text_kind": "hook", "text_on_screen_first_second": "hook", "hook_type": "hook", "payoff_second": "hook",
            "has_title_label": "text", "caption_style": "captions", "caption_position": "captions",
            "caption_keyword_color": "captions", "layout": "framing", "facecam": "framing",
-           "length_s": "length", "content_type": "content",
+           "length_s": "length", "content_type": "content", "format": "content",
            "background_music": "sound", "music_type": "sound", "cuts_on_beat": "sound",
            "opening_type": "structure", "middle_type": "structure", "ending_type": "structure",
            "payoff_pct": "structure", "setup_seconds": "structure", "beats": "structure",
@@ -754,6 +756,20 @@ def findings(rows, cfg, now):
     return play, src
 
 
+def skill_rows(rows, settings, now):
+    """Research rows of the format group our own clips belong to (settings researcher.skill_group,
+    'stream'): everything used to build or choose editing skills comes from these. Too few winners
+    of that group yet -> all formats, said so. -> (rows, basis)."""
+    group = settings["researcher"].get("skill_group")
+    if not group:
+        return rows, "all formats"
+    sub = [r for r in rows if features_of(r) and formats.group_of(features_of(r)) == group]
+    win, _ = winner_groups(sub, settings, now)
+    if len(win) < settings["researcher"].get("min_group", 8):
+        return rows, f"all formats (only {len(win)} {group}-clip winners so far)"
+    return sub, f"{group} clips only ({len(win)} winners)"
+
+
 def viral_tricks_now(rows, settings, now):
     """Tricks ranked by how much more winning Shorts use them: last 72 h (rising vs average) when
     there is enough fresh data, else 7-day winners + rising vs average. -> (list, basis)."""
@@ -976,13 +992,20 @@ def main(argv=None):
             msgs.append(f"right now: {src}")
         for m in msgs:
             print(f"Findings {m}.")
-        sp = (style_rows(records, settings, now) + length_rows(records, settings, now)
-              + structure_rows(records, settings, now))
-        gp = gap_rows(records, settings, now)
-        hot, basis = viral_tricks_now(records, settings, now)
+        srows, sbasis = skill_rows(records, settings, now)
+        print(f"Editing skills judged on: {sbasis}.")
+        sp = (style_rows(srows, settings, now) + length_rows(srows, settings, now)
+              + structure_rows(srows, settings, now))
+        gp = gap_rows(srows, settings, now)
+        hot, basis = viral_tricks_now(srows, settings, now)
+        basis = f"{basis}, {sbasis}"
         ecfg = settings["researcher"].get("examples", {})
-        ex = examples.build(winner_entries(records, settings, now), hot, iso(now), ecfg.get("tricks", 5),
+        entries = winner_entries(srows, settings, now)
+        ex = examples.build(entries, hot, iso(now), ecfg.get("tricks", 5),
                             ecfg.get("per_trick", 10), ecfg.get("top", 10))
+        play += examples.playbook_rows(hot, entries, basis, iso(now),
+                                       ecfg.get("fit_tricks", 3))
+        print(f"  {play[-1]['rule']}")
         if ex:
             sheets.upsert_rows(ss.worksheet("Examples"), TABS["Examples"], "example_id", ex)
             print(f"Viral tricks right now ({basis}):")

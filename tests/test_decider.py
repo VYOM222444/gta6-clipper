@@ -140,3 +140,14 @@ def test_scout_handle_of():
     assert handle_of({"snippet": {"customUrl": "@abc"}}) == "@abc"
     assert handle_of({"snippet": {"customUrl": "abc"}}) == "@abc"
     assert handle_of({}) == ""
+
+
+def test_trick_fit_is_a_small_bonus_quality_still_decides():
+    cfg = load_settings()["decider"]
+    base = decider.moment_score(mom("a", "v"), "", NOW, cfg)
+    assert decider.moment_score({**mom("a", "v"), "trick_fit": "10"}, "", NOW, cfg) == round(base + 0.5, 3)
+    assert decider.moment_score({**mom("a", "v"), "trick_fit": "1"}, "", NOW, cfg) < base
+    assert decider.moment_score({**mom("a", "v"), "trick_fit": ""}, "", NOW, cfg) == base
+    # a better moment that fits badly still beats a worse moment that fits perfectly
+    assert decider.moment_score({**mom("a", "v", quality=9), "trick_fit": "1"}, "", NOW, cfg) > \
+        decider.moment_score({**mom("b", "v", quality=8), "trick_fit": "10"}, "", NOW, cfg)

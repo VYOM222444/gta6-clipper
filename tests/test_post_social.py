@@ -83,3 +83,18 @@ def test_instagram_processing_error():
 def test_facebook_flow():
     m = ps.Meta("SECRET", session=FakeSession(), sleep=lambda s: None)
     assert m.facebook("PG1", b"abcd", "cap") == ("V1", "https://www.facebook.com/reel/V1")
+
+
+def test_tokens_from_metas_accounts_answer_pasted_as_is():
+    import json
+    brands = [{"key": "wasted_again", "name": "Wasted Again"}, {"key": "neon_wanted", "name": "Neon Wanted"},
+              {"key": "five_star_chaos", "name": "Five Star Chaos"}]
+    answer = {"data": [
+        {"name": "Wasted Again Clips", "id": "111", "access_token": "tA", "instagram_business_account": {"id": "17841"}},
+        {"name": "neon wanted", "id": "222", "access_token": "tB"},                 # Instagram not linked yet
+        {"name": "My Personal Page", "id": "333", "access_token": "tC"}],
+        "paging": {"cursors": {}}}
+    t = ps.load_tokens({ps.ENV: json.dumps(answer)}, brands)
+    assert t == {"wasted_again": {"token": "tA", "page_id": "111", "ig_user_id": "17841"},
+                 "neon_wanted": {"token": "tB", "page_id": "222", "ig_user_id": ""}}
+    assert ps.load_tokens({ps.ENV: '{"data": []}'}, brands) == {}

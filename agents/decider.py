@@ -88,6 +88,9 @@ def moment_score(m, label, now, cfg):
     t = parse_time(m.get("watched_at") or m.get("created_at"))
     if t:
         s -= cfg["age_penalty_per_hour"] * max((now - t).total_seconds() / 3600 - 6, 0)
+    fit = str(m.get("trick_fit") or "").strip()
+    if fit:   # small bonus for moments that suit today's viral tricks; quality still decides
+        s += cfg.get("trick_fit_weight", 0.1) * (_f(fit) - 5)
     found = re.match(r"(\d+) Shorts already", str(m.get("saturation", "")))
     if found:
         s -= cfg["partly_clipped_penalty"] * int(found.group(1))

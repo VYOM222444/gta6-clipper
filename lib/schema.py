@@ -25,7 +25,7 @@ TABS = {
         "moment_id", "video_id", "start_s", "end_s", "source", "signal", "strength",
         "reason", "content_type", "style_tags", "suggested_brand", "has_promo",
         "gate_status", "created_at", "quality", "standalone", "hook_idea", "title",
-        "channel_title", "url", "watched_at", "saturation", "gate_note",
+        "channel_title", "url", "watched_at", "saturation", "gate_note", "trick_fit", "fit_note",
     ],
     # Human-readable view of the active Playbook rules.
     "Playbook": [
