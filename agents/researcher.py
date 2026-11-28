@@ -1007,8 +1007,13 @@ def main(argv=None):
         entries = winner_entries(srows, settings, now)
         ex = examples.build(entries, hot, iso(now), ecfg.get("tricks", 5),
                             ecfg.get("per_trick", 10), ecfg.get("top", 10))
-        play += examples.playbook_rows(hot, entries, basis, iso(now),
-                                       ecfg.get("fit_tricks", 3))
+        try:
+            prev = next((r for r in sheets.read_records(ss.worksheet("Playbook"))
+                         if r.get("rule_id") == "alerts.new_trick"), None)
+        except Exception:  # no Playbook yet: a new alert starts today
+            prev = None
+        play += examples.playbook_rows(hot, entries, basis, iso(now), ecfg.get("fit_tricks", 3),
+                                       ecfg.get("alert_top"), ecfg.get("alert_links", 3), prev)
         print(f"  {play[-1]['rule']}")
         if ex:
             sheets.upsert_rows(ss.worksheet("Examples"), TABS["Examples"], "example_id", ex)

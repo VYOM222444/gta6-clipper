@@ -182,7 +182,9 @@
       "experiments": {
         "shake": 1.0,
         "freeze": 1.0,
-        "loop": 1.0
+        "loop": 1.0,
+        "deadair": 0.0,
+        "memesfx": 0.0
       },
       "_experiments_note": "Skills under test: each goes on this share of clips at random (stable per clip); template_version tags (shake/freeze) let the Analyst compare our own posts with vs without.",
       "shake_seconds": 0.4,
@@ -192,7 +194,15 @@
       "freeze_zoom": 1.08,
       "loop_max_start": 0.5,
       "loop_tail": 2.0,
-      "loop_fps": 10
+      "loop_fps": 10,
+      "_new_skills_note": "deadair (dead-air cutter) and memesfx (boom / ding on the payoff) are built but OFF (0.0) until the owner has tested them on real clips (render notebook cell 5: TEST_SKILLS); switch on with 1.0.",
+      "deadair_drop_db": 20,
+      "deadair_min_gap": 0.6,
+      "deadair_pad": 0.15,
+      "deadair_protect": 2.0,
+      "deadair_max_share": 0.3,
+      "boom_volume": 0.9,
+      "ding_volume": 0.6
     },
     "style_defaults": {
       "_note": "Used until the Researcher has enough analysed winners; then Playbook style.* rows decide (lib/style.py).",
@@ -321,7 +331,10 @@
       "per_trick": 10,
       "top": 10,
       "min_use": 0.15,
-      "fit_tricks": 3
+      "fit_tricks": 3,
+      "alert_top": 5,
+      "alert_links": 2,
+      "_alert_note": "alerts.new_trick: the best viral trick we can't do yet if it is in the top `alert_top`, with `alert_links` example links and `since` (first day of the alert); the daily skill scout tells the owner."
     },
     "deep": {
       "_note": "mode deep: no YouTube; analyse collected Shorts (winners first, then comparison groups, then backfill of new tags). Scheduled every 3 h when repo variable DEEP_RESEARCH = on.",

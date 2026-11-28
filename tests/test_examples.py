@@ -1,3 +1,5 @@
+import json
+
 from lib import examples
 
 
@@ -48,3 +50,25 @@ def test_playbook_rows_viral_tricks_and_new_trick_alert():
     calm = {r["rule_id"]: r for r in examples.playbook_rows(hot[1:], entries, "72 h", "now")}
     assert calm["alerts.new_trick"]["value"] == "null"
     assert examples.viral_from_playbook([]) == []
+
+
+def test_alert_looks_at_the_top_5_with_2_links_and_keeps_its_first_day():
+    hot = [{"key": "screen_shake", "name": "screen shake", "have": True, "w": 0.5, "a": 0.2, "lift": 0.3},
+           {"key": "loop_ending", "name": "loop ending", "have": True, "w": 0.3, "a": 0.1, "lift": 0.2},
+           {"key": "freeze_frame", "name": "freeze frame", "have": True, "w": 0.2, "a": 0.1, "lift": 0.1},
+           {"key": "cuts_on_beat", "name": "cuts on the beat", "have": False, "w": 0.56, "a": 0.39, "lift": 0.17}]
+    entries = [e(i, i, cuts_on_beat=True) for i in range(1, 6)]
+    old = {r["rule_id"]: r for r in examples.playbook_rows(hot, entries, "72 h", "2026-11-28T09:00:00Z", n=3)}
+    assert old["alerts.new_trick"]["value"] == "null"                       # top 3 only: no alert
+    rows = {r["rule_id"]: r for r in examples.playbook_rows(hot, entries, "72 h", "2026-11-28T09:00:00Z", 3,
+                                                             alert_top=5, links=2)}
+    alert = rows["alerts.new_trick"]
+    assert alert["rule"].startswith("NEW VIRAL TRICK") and "cuts on the beat (#4" in alert["rule"]
+    assert alert["rule"].count("https://") == 2 and "since 2026-11-28" in alert["rule"]
+    later = {r["rule_id"]: r for r in examples.playbook_rows(hot, entries, "72 h", "2026-11-30T09:00:00Z", 3,
+                                                              alert_top=5, links=2, prev=alert)}
+    assert json.loads(later["alerts.new_trick"]["value"])["since"] == "2026-11-28"   # same trick: same first day
+    other = dict(alert, value=json.dumps({"key": "emoji_or_stickers", "since": "2026-11-20"}))
+    fresh = {r["rule_id"]: r for r in examples.playbook_rows(hot, entries, "72 h", "2026-11-30T09:00:00Z", 3,
+                                                              alert_top=5, links=2, prev=other)}
+    assert json.loads(fresh["alerts.new_trick"]["value"])["since"] == "2026-11-30"   # new trick: new first day

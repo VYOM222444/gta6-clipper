@@ -116,3 +116,68 @@ def test_loop_points_pick_the_end_frame_that_looks_like_the_start():
     assert edits.loop_window({"payoff": 5.0, "freeze": (5.0, 0.6)}, 20) == (5.9, 7.9)
     assert edits.loop_window({"payoff": 5.0, "freeze": None}, 6.0) == (5.3, 6.0)
     assert edits.loop_window({"payoff": None}, 20) == (18.0, 20.0)
+
+
+# --- dead-air cutter + boom / ding (28 Nov) ----------------------------------------------------
+
+DA = {"deadair_drop_db": 20, "deadair_min_gap": 0.6, "deadair_pad": 0.15, "deadair_protect": 2.0,
+      "deadair_max_share": 0.3, "min_seconds": 8}
+
+
+def rms_track(sec, quiet=()):
+    """Loudness frames (0.05 s): talking level 0.3, quiet stretches at 0.003 (-40 dB lower)."""
+    n = int(round(sec / edits.FRAME))
+    r = np.full(n, 0.3)
+    for a, b in quiet:
+        r[int(round(a / edits.FRAME)):int(round(b / edits.FRAME))] = 0.003
+    return r
+
+
+def test_dead_air_cuts_pauses_but_keeps_the_build_up_and_the_end():
+    r = rms_track(30, [(0, 1.0), (5, 7), (16.5, 19), (28.5, 30)])   # payoff at 20 s
+    keep = edits.dead_air(r, 20.0, DA)
+    # leading 1 s cut from 0; 5-7 s cut with 0.15 s kept each side; 16.5-19 overlaps the 2 s build-up
+    # before the payoff (18-20.5): only 16.65-18 goes; the pause at the very end stays
+    assert keep == [(0.85, 5.15), (6.85, 16.65), (18.0, 30.0)]
+    assert edits.dead_air(rms_track(30), 20.0, DA) == []              # no pauses: nothing to cut
+    assert edits.dead_air(rms_track(30, [(5, 5.4)]), None, DA) == []  # 0.4 s pause: too short
+
+
+def test_dead_air_never_removes_too_much():
+    r = rms_track(12, [(1, 4), (5, 8.5)])                 # 6.5 s of pauses in a 12 s clip
+    keep = edits.dead_air(r, None, DA)
+    removed = 12 - sum(b - a for a, b in keep)
+    assert removed <= 0.3 * 12 + 1e-6 and sum(b - a for a, b in keep) >= 8
+    assert keep == [(0.0, 5.15), (8.35, 12.0)]           # the longest pause that fits the 30% cap
+
+
+def test_deadair_cmd_uses_basic_filters_and_fades_every_part():
+    cmd = edits.deadair_cmd("s.mp4", "t.mp4", [(0.85, 5.15), (6.85, 16.65)])
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "split=2" in fc and "asplit=2" in fc and "concat=n=2:v=1:a=1[v][a]" in fc
+    assert "trim=start=0.85:end=5.15" in fc and "afade=t=out:st=4.285" in fc
+    one = edits.deadair_cmd("s.mp4", "t.mp4", [(1.0, 9.0)], has_audio=False)
+    fc1 = one[one.index("-filter_complex") + 1]
+    assert "split" not in fc1 and "[0:v]trim=start=1.0:end=9.0" in fc1 and "-an" not in one
+
+
+def test_payoff_sound_picks_boom_for_fails_and_ding_for_reveals():
+    assert edits.payoff_sound({"content_type": "tip", "title": "GTA 6 hidden money trick"}) == "ding"
+    assert edits.payoff_sound({"content_type": "secret"}) == "ding"
+    assert edits.payoff_sound({"content_type": "chaos", "hook_text": "Worst driver ever 💀"}) == "boom"
+    assert edits.payoff_sound({"content_type": "chaos", "brand": "busted_again", "title": "GTA 6 crash"}) == "boom"
+    assert edits.payoff_sound({"content_type": "chaos", "title": "GTA 6 police chase"}) is None   # impact stays
+
+
+def test_boom_replaces_the_impact_and_shows_in_the_tags():
+    p = edits.plan(14.0, 9.25, [4.0], {"impact": True}, CFG)
+    edits.apply_payoff_sound(p, "boom", {"boom_volume": 0.8})
+    assert p["impacts"] == [9.25] and p["payoff_sfx"] == "boom"
+    cmd = " ".join(edits.pass2_cmd("m.mp4", "o.mp4", p, "boom.wav", "w.wav", CFG))
+    assert "boom.wav" in cmd and "volume=0.8" in cmd
+    q = edits.apply_payoff_sound(edits.plan(14.0, 9.25, [], {}, CFG), "ding", {})   # impact off: still one sound
+    assert q["impacts"] == [9.25] and q["impact_volume"] == 0.6
+    q["deadair"] = (3, 4.2)
+    assert "ding" in edits.tags(q) and "deadair3" in edits.tags(q)
+    assert edits.apply_payoff_sound(edits.plan(14.0, None, [], {}, CFG), "boom", {}).get("payoff_sfx") is None
+    assert len(edits.meme_sfx_cmds("b.wav", "d.wav")) == 2

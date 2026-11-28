@@ -150,6 +150,122 @@ def plan(duration, payoff, hits, flags, cfg):
     return p
 
 
+def dead_air(rms, payoff=None, cfg=None, frame=FRAME):
+    """Dead-air cutter (28 Nov): winning Shorts have no dead air, ours are raw stream cuts. A pause =
+    loudness more than `deadair_drop_db` below the clip's loud level (90th percentile) for at least
+    `deadair_min_gap` s. Each cut keeps `deadair_pad` s of the pause on both sides, never touches the
+    build-up before the payoff (`deadair_protect` s) or the half second after it, leaves a pause at
+    the very end alone (the end cut / loop handle the end), removes at most `deadair_max_share` of the
+    clip and keeps it >= min_seconds. -> [(start, end)] seconds to KEEP, or [] = nothing worth cutting."""
+    import numpy as np
+    cfg = cfg or {}
+    n = len(rms)
+    if n < int(3 / frame):
+        return []
+    db = 20 * np.log10(np.maximum(np.asarray(rms, dtype="float64"), 1e-6))
+    quiet = db < float(np.percentile(db, 90)) - cfg.get("deadair_drop_db", 20)
+    dur, pad = n * frame, cfg.get("deadair_pad", 0.15)
+    zone = (payoff - cfg.get("deadair_protect", 2.0), payoff + 0.5) if payoff is not None else None
+    cuts, i = [], 0
+    while i < n:
+        if not quiet[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and quiet[j]:
+            j += 1
+        a, b = i * frame, j * frame
+        i = j
+        if b - a < cfg.get("deadair_min_gap", 0.6) or j >= n:   # short, or the clip's last pause
+            continue
+        a, b = (0.0 if a == 0 else a + pad), b - pad
+        parts = [(a, b)]
+        if zone and a < zone[1] and b > zone[0]:     # keep the build-up before the payoff
+            parts = [(a, min(b, zone[0])), (max(a, zone[1]), b)]
+        cuts += [(round(x, 2), round(y, 2)) for x, y in parts if y - x >= 0.2]
+    budget, total, chosen = cfg.get("deadair_max_share", 0.3) * dur, 0.0, []
+    for a, b in sorted(cuts, key=lambda c: c[0] - c[1]):          # longest pauses first
+        if total + (b - a) <= budget and dur - total - (b - a) >= cfg.get("min_seconds", 8):
+            chosen.append((a, b))
+            total += b - a
+    if not chosen:
+        return []
+    keep, t = [], 0.0
+    for a, b in sorted(chosen):
+        if a - t >= 0.1:
+            keep.append((round(t, 2), round(a, 2)))
+        t = b
+    if dur - t >= 0.1:
+        keep.append((round(t, 2), round(dur, 2)))
+    return keep
+
+
+def deadair_cmd(src, dst, keep, has_audio=True, fade=0.015):
+    """Jump-cut the source down to the `keep` parts (basic filters only: split, trim, concat; old
+    ffmpeg safe). Every part's sound gets a 15 ms fade in/out so the cuts never click."""
+    n = len(keep)
+    fc = []
+    if n > 1:
+        fc.append("[0:v]split=" + str(n) + "".join(f"[vs{i}]" for i in range(n)))
+        if has_audio:
+            fc.append("[0:a]asplit=" + str(n) + "".join(f"[as{i}]" for i in range(n)))
+    pads = ""
+    for i, (a, b) in enumerate(keep):
+        fc.append(f"{f'[vs{i}]' if n > 1 else '[0:v]'}trim=start={a}:end={b},setpts=PTS-STARTPTS[v{i}]")
+        pads += f"[v{i}]"
+        if has_audio:
+            out = round(max(b - a - fade, 0), 3)
+            fc.append(f"{f'[as{i}]' if n > 1 else '[0:a]'}atrim=start={a}:end={b},asetpts=PTS-STARTPTS,"
+                      f"afade=t=in:d={fade},afade=t=out:st={out}:d={fade}[a{i}]")
+            pads += f"[a{i}]"
+    fc.append(f"{pads}concat=n={n}:v=1:a={1 if has_audio else 0}[v]" + ("[a]" if has_audio else ""))
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(src), "-filter_complex", ";".join(fc),
+           "-map", "[v]"]
+    if has_audio:
+        cmd += ["-map", "[a]", "-c:a", "aac", "-b:a", "192k"]
+    return cmd + ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", str(dst)]
+
+
+FAIL_WORDS = ("fail", "wasted", "busted", "oops", "bruh", "worst", "dumb", "glitch", "bug", "gone wrong", "funny",
+              "lol", "clown", "noob", "rip ", "broke", "💀", "😂", "🤣", "😭")
+PAYOFF_SOUND = {"tip": "ding", "secret": "ding", "news": "ding"}
+
+
+def payoff_sound(row):
+    """Meme sound + ding (28 Nov): 'ding' for a clever reveal (tip / secret / news clips), 'boom' (deep
+    meme-style boom) for a fail or a funny beat in a chaos / reaction clip (from its hook, title and
+    description words; the Busted Again brand is fails by design), None = keep the normal impact."""
+    ct = str(row.get("content_type", "")).strip().lower()
+    if ct in PAYOFF_SOUND:
+        return PAYOFF_SOUND[ct]
+    text = " ".join(str(row.get(k, "")) for k in ("hook_text", "title_label", "title", "description")).lower()
+    if ct in ("chaos", "reaction") and (row.get("brand") == "busted_again" or any(w in text for w in FAIL_WORDS)):
+        return "boom"
+    return None
+
+
+def meme_sfx_cmds(boom_path, ding_path):
+    """Generate the boom + ding once (48 kHz stereo wav), like sfx_cmds: no files, no copyright."""
+    boom = ("aevalsrc='0.95*sin(2*PI*(58-18*t)*t)*exp(-2.4*t)+0.35*sin(2*PI*(116-36*t)*t)*exp(-3.5*t)'"
+            ":s=48000:d=1.3,lowpass=f=900,aformat=channel_layouts=stereo")
+    ding = ("aevalsrc='0.55*sin(2*PI*1568*t)*exp(-5*t)+0.3*sin(2*PI*2349*t)*exp(-7*t)"
+            "+0.12*sin(2*PI*3136*t)*exp(-9*t)':s=48000:d=1.1,aformat=channel_layouts=stereo")
+    return [["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", boom, str(boom_path)],
+            ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", ding, str(ding_path)]]
+
+
+def apply_payoff_sound(p, kind, cfg):
+    """The payoff gets `kind` (boom / ding) instead of the impact sound (one sound, not two); if the
+    impact is off it gets one anyway. Returns the plan."""
+    if not kind or p.get("payoff") is None or p["payoff"] >= p["end"]:
+        return p
+    p["payoff_sfx"] = kind
+    p["impact_volume"] = cfg.get(f"{kind}_volume", 0.9 if kind == "boom" else 0.6)
+    if not p["impacts"]:
+        p["impacts"] = [p["payoff"]]
+    return p
+
+
 def experiment_flags(flags, batch_id, experiments):
     """Skills under test go on a stable random share of clips (same clip = same answer on re-runs),
     so our own posts can be compared with vs without them."""
@@ -176,6 +292,10 @@ def tags(p, remove_music=False):
         out.append("freeze")
     if p.get("loop"):
         out.append("loop")
+    if p.get("deadair"):
+        out.append(f"deadair{p['deadair'][0]}")
+    if p.get("payoff_sfx"):
+        out.append(p["payoff_sfx"])
     if p["payoff"] is not None and p["end"] < p.get("source_end", p["end"] + 1):
         out.append("cut")
     if remove_music:
@@ -317,7 +437,7 @@ def pass2_cmd(main, out, p, impact_path, whoosh_path, cfg):
     else:
         vlabel, alabel = mv, ma
     mix = [alabel]
-    for name, idx, times, vol in (("i", 1, p["impacts"], cfg.get("impact_volume", 0.9)),
+    for name, idx, times, vol in (("i", 1, p["impacts"], p.get("impact_volume", cfg.get("impact_volume", 0.9))),
                                   ("w", 2, p["whooshes"], cfg.get("whoosh_volume", 0.5))):
         if not times:
             continue

@@ -1,7 +1,8 @@
 """Download the top example Shorts from the Examples tab to Google Drive (Colab only).
 
 The owner downloads them from Drive and sends them to Claude in chat to build new editing skills.
-Order: the 10 examples of viral trick #1, then trick #2, ... then TOP breakouts.
+Order: the viral tricks we can't do yet first (the next skills to build), then the others by rank
+(10 examples each), then TOP breakouts.
 Saved to <output_dir>/_examples/<date>/NN_<category>_<video_id>.mp4 + _list.txt (what each is).
 Never fails the render run: any problem is printed and skipped.
 
@@ -36,10 +37,11 @@ def _int(v, d=99):
 
 
 def pick(rows, n):
-    """Ordered unique picks: all examples of viral trick #1, then #2, ... then TOP breakouts."""
+    """Ordered unique picks: the viral tricks we can't do yet first (they are the next skills to
+    build), each trick's examples best first, then the tricks we can do by rank, then TOP breakouts."""
     rows = [r for r in rows if r.get("url")]
     tricks = sorted([r for r in rows if r.get("category") != TOP],
-                    key=lambda r: (_int(r.get("trick_rank")), _rank(r)))
+                    key=lambda r: (str(r.get("have_skill", "")).lower() == "yes", _int(r.get("trick_rank")), _rank(r)))
     top = sorted([r for r in rows if r.get("category") == TOP], key=_rank)
     out, seen = [], set()
     for r in tricks + top:
